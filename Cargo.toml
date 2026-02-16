@@ -1,0 +1,40 @@
+[package]
+name = "contextsmith"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+license = "MIT OR Apache-2.0"
+description = "A deterministic, token-aware context bundler for LLMs"
+repository = "https://github.com/user/contextsmith"
+keywords = ["cli", "llm", "context", "code", "developer-tools"]
+categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "contextsmith"
+path = "src/main.rs"
+
+[lib]
+name = "contextsmith"
+path = "src/lib.rs"
+
+[dependencies]
+thiserror = "2"
+anyhow = "1"
+clap = { version = "4.5", features = ["derive", "env", "cargo"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+colored = "2"
+directories = "6"
+
+[dev-dependencies]
+tempfile = "3"
+assert_cmd = "2"
+predicates = "3"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
