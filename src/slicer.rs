@@ -133,17 +133,22 @@ fn slice_with_context(file: &DiffFile, options: &SliceOptions) -> Result<Vec<Sni
 
     let snippets = ranges
         .into_iter()
-        .map(|(start, end)| {
-            // Lines are 1-based; our vec is 0-based.
-            let content = file_lines[start.saturating_sub(1)..end.min(total_lines)].join("\n");
+        .filter_map(|(start, end)| {
+            // Clamp to valid file bounds (1-based → 0-based indexing).
+            let clamped_start = start.max(1);
+            let clamped_end = end.min(total_lines);
+            if clamped_start > clamped_end {
+                return None;
+            }
+            let content = file_lines[clamped_start.saturating_sub(1)..clamped_end].join("\n");
 
-            Snippet {
+            Some(Snippet {
                 file_path: file.path.clone(),
-                start_line: start,
-                end_line: end,
+                start_line: clamped_start,
+                end_line: clamped_end,
                 content,
                 reason: status_reason(file.status),
-            }
+            })
         })
         .collect();
 
@@ -152,6 +157,11 @@ fn slice_with_context(file: &DiffFile, options: &SliceOptions) -> Result<Vec<Sni
 
 /// Compute line ranges for all hunks, expand by context, and merge overlaps.
 ///
+/// Uses the actual changed (added/removed) line numbers within each hunk
+/// rather than the hunk header's range, which includes git's default 3
+/// context lines. This ensures `--context N` accurately controls the
+/// number of surrounding lines shown.
+///
 /// Returns a sorted, non-overlapping list of `(start_line, end_line)` tuples
 /// (1-based, inclusive).
 fn compute_merged_ranges(
@@ -159,13 +169,29 @@ fn compute_merged_ranges(
     context_lines: usize,
     total_lines: usize,
 ) -> Vec<(usize, usize)> {
-    // Collect the raw range for each hunk (new-file coordinates).
     let mut ranges: Vec<(usize, usize)> = hunks
         .iter()
         .map(|h| {
-            let start = h.new_start.saturating_sub(context_lines).max(1);
-            let end =
-                (h.new_start + h.new_count.saturating_sub(1) + context_lines).min(total_lines);
+            // Find the actual changed line range by inspecting DiffLines.
+            // Only added lines have new_lineno (they exist in the new file).
+            let changed_lines: Vec<usize> = h
+                .lines
+                .iter()
+                .filter(|l| l.kind == LineKind::Added || l.kind == LineKind::Removed)
+                .filter_map(|l| l.new_lineno.or(l.old_lineno))
+                .collect();
+
+            // Fall back to hunk header if no changed lines found.
+            let (change_start, change_end) = if changed_lines.is_empty() {
+                (h.new_start, h.new_start + h.new_count.saturating_sub(1))
+            } else {
+                let min = *changed_lines.iter().min().unwrap();
+                let max = *changed_lines.iter().max().unwrap();
+                (min, max)
+            };
+
+            let start = change_start.saturating_sub(context_lines).max(1);
+            let end = (change_end + context_lines).min(total_lines);
             (start, end)
         })
         .collect();
