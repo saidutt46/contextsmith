@@ -127,7 +127,7 @@ mod tests {
 
     #[test]
     fn retryable_classification() {
-        let io_err = ContextSmithError::io("read", io::Error::new(io::ErrorKind::Other, "timeout"));
+        let io_err = ContextSmithError::io("read", io::Error::other("timeout"));
         assert!(io_err.is_retryable());
         assert!(!ContextSmithError::config("nope").is_retryable());
     }
