@@ -24,7 +24,7 @@ cargo install --path .
 
 ### Requirements
 
-- Rust 1.74+
+- Rust 1.85+
 - Git (for `diff` command)
 
 ## Quick Start
