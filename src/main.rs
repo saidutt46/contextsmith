@@ -6,6 +6,7 @@ use colored::Colorize;
 
 use contextsmith::cli::{Cli, ColorMode, Command};
 use contextsmith::commands;
+use contextsmith::commands::diff::DiffCommandOptions;
 use contextsmith::commands::init::{InitOptions, InitResult};
 use contextsmith::error::ContextSmithError;
 
@@ -58,7 +59,35 @@ fn run(cli: Cli) -> Result<(), ContextSmithError> {
             print_init_result(&result);
             Ok(())
         }
-        Command::Diff { .. } => commands::not_implemented("diff"),
+        Command::Diff {
+            rev_range,
+            staged,
+            untracked,
+            since,
+            hunks_only,
+            context,
+            include_related,
+            format,
+            out,
+            stdout,
+            budget: _,
+        } => {
+            let root = resolve_root(cli.root)?;
+            commands::diff::run(DiffCommandOptions {
+                root,
+                rev_range,
+                staged,
+                untracked,
+                since,
+                hunks_only,
+                context_lines: context,
+                include_related,
+                format,
+                out,
+                stdout,
+                quiet: cli.quiet,
+            })
+        }
         Command::Collect { .. } => commands::not_implemented("collect"),
         Command::Pack { .. } => commands::not_implemented("pack"),
         Command::Trim { .. } => commands::not_implemented("trim"),
