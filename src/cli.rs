@@ -362,7 +362,7 @@ pub enum Command {
 
         /// Show detailed explanations
         #[arg(long)]
-        verbose: bool,
+        detailed: bool,
 
         /// Show top N items
         #[arg(long)]
