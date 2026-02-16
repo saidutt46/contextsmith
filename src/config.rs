@@ -282,15 +282,19 @@ mod tests {
 
     #[test]
     fn validation_rejects_zero_budget() {
-        let mut config = Config::default();
-        config.default_budget = 0;
+        let config = Config {
+            default_budget: 0,
+            ..Config::default()
+        };
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn validation_rejects_reserve_gte_budget() {
-        let mut config = Config::default();
-        config.reserve_tokens = config.default_budget;
+        let config = Config {
+            reserve_tokens: 12000,
+            ..Config::default()
+        };
         assert!(config.validate().is_err());
     }
 
@@ -303,8 +307,10 @@ mod tests {
     #[test]
     fn merge_overrides_budget() {
         let mut base = Config::default();
-        let mut overrides = Config::default();
-        overrides.default_budget = 5000;
+        let overrides = Config {
+            default_budget: 5000,
+            ..Config::default()
+        };
         base.merge(overrides);
         assert_eq!(base.default_budget, 5000);
     }

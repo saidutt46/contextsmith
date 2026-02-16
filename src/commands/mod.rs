@@ -1,3 +1,4 @@
+pub mod diff;
 pub mod init;
 
 use crate::error::{ContextSmithError, Result};
