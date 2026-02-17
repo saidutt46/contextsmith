@@ -11,7 +11,7 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::error::{ContextSmithError, Result};
 
@@ -46,7 +46,7 @@ pub enum Format {
 ///
 /// This is the universal intermediate representation that every command
 /// builds before handing off to a formatter.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Bundle {
     /// Human-readable summary (e.g. "3 files changed, 5 hunks").
     pub summary: String,
@@ -55,7 +55,7 @@ pub struct Bundle {
 }
 
 /// A single section within a [`Bundle`], typically one per file.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BundleSection {
     /// File path relative to the project root.
     pub file_path: String,
