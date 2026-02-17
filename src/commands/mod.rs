@@ -1,5 +1,7 @@
 pub mod diff;
+pub mod explain;
 pub mod init;
+pub mod pack;
 
 use crate::error::{ContextSmithError, Result};
 
