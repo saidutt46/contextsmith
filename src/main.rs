@@ -7,7 +7,9 @@ use colored::Colorize;
 use contextsmith::cli::{Cli, ColorMode, Command};
 use contextsmith::commands;
 use contextsmith::commands::diff::DiffCommandOptions;
+use contextsmith::commands::explain::ExplainCommandOptions;
 use contextsmith::commands::init::{InitOptions, InitResult};
+use contextsmith::commands::pack::PackCommandOptions;
 use contextsmith::error::ContextSmithError;
 
 fn main() {
@@ -70,7 +72,7 @@ fn run(cli: Cli) -> Result<(), ContextSmithError> {
             format,
             out,
             stdout,
-            budget: _,
+            budget,
         } => {
             let root = resolve_root(cli.root)?;
             commands::diff::run(DiffCommandOptions {
@@ -86,14 +88,52 @@ fn run(cli: Cli) -> Result<(), ContextSmithError> {
                 out,
                 stdout,
                 quiet: cli.quiet,
+                budget,
+                model: None,
             })
         }
         Command::Collect { .. } => commands::not_implemented("collect"),
-        Command::Pack { .. } => commands::not_implemented("pack"),
+        Command::Pack {
+            bundle,
+            budget,
+            chars,
+            model,
+            reserve,
+            strategy,
+            must,
+            drop,
+            format,
+            stdout,
+            out,
+        } => commands::pack::run(PackCommandOptions {
+            bundle,
+            budget,
+            chars,
+            model,
+            reserve,
+            strategy,
+            must,
+            drop,
+            format,
+            stdout,
+            out,
+            quiet: cli.quiet,
+        }),
         Command::Trim { .. } => commands::not_implemented("trim"),
         Command::Map { .. } => commands::not_implemented("map"),
         Command::Stats { .. } => commands::not_implemented("stats"),
-        Command::Explain { .. } => commands::not_implemented("explain"),
+        Command::Explain {
+            bundle,
+            detailed,
+            top,
+            show_weights,
+        } => commands::explain::run(ExplainCommandOptions {
+            bundle,
+            detailed,
+            top,
+            show_weights,
+            quiet: cli.quiet,
+        }),
     }
 }
 

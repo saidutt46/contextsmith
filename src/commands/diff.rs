@@ -12,8 +12,10 @@ use tracing::warn;
 use crate::cli::OutputFormat;
 use crate::error::Result;
 use crate::git::{self, DiffOptions, FileStatus};
+use crate::manifest::{self, ManifestEntry};
 use crate::output::{self, Bundle, BundleSection, Format, FormatOptions};
-use crate::slicer::{self, SliceOptions};
+use crate::slicer::{self, SliceOptions, Snippet};
+use crate::tokens::{self, TokenEstimator};
 
 // ---------------------------------------------------------------------------
 // Public interface
@@ -46,6 +48,10 @@ pub struct DiffCommandOptions {
     pub stdout: bool,
     /// Suppress non-essential output.
     pub quiet: bool,
+    /// Token budget — if set, greedily include snippets until budget fills.
+    pub budget: Option<usize>,
+    /// Model name for token estimation.
+    pub model: Option<String>,
 }
 
 /// Run the diff command end-to-end.
@@ -81,10 +87,21 @@ pub fn run(options: DiffCommandOptions) -> Result<()> {
         },
     )?;
 
-    // Step 3: Build a bundle from the snippets.
-    let bundle = build_bundle(&diff_files, snippets);
+    // Step 3: Apply budget if set.
+    let model = options
+        .model
+        .as_deref()
+        .map(tokens::parse_model)
+        .unwrap_or(tokens::ModelFamily::Gpt4);
+    let estimator = tokens::CharEstimator::new(model);
 
-    // Step 4: Format and write output.
+    let (included_snippets, manifest_entries) =
+        apply_budget_and_build_entries(&snippets, &estimator, options.budget);
+
+    // Step 4: Build a bundle from included snippets.
+    let bundle = build_bundle(&diff_files, included_snippets);
+
+    // Step 5: Format and write output.
     let format = cli_format_to_output_format(&options.format);
     let formatted = output::format_bundle(&bundle, format)?;
     output::write_output(
@@ -92,13 +109,29 @@ pub fn run(options: DiffCommandOptions) -> Result<()> {
         &FormatOptions {
             format,
             stdout: options.stdout,
-            out: options.out,
+            out: options.out.clone(),
         },
     )?;
 
-    // Step 5: Print summary to stderr (unless writing to stdout or quiet).
+    // Step 6: Write manifest as sibling file when --out is specified.
+    if let Some(ref out_path) = options.out {
+        let manifest =
+            manifest::build_manifest(manifest_entries, estimator.model_name(), options.budget, 0);
+        let manifest_path = manifest_sibling_path(out_path);
+        manifest::write_manifest(&manifest, &manifest_path)?;
+        if !options.quiet {
+            eprintln!(
+                "{} manifest written to {}",
+                "ok:".green().bold(),
+                manifest_path.display()
+            );
+        }
+    }
+
+    // Step 7: Print summary to stderr (unless writing to stdout or quiet).
     if !options.quiet && !options.stdout {
-        print_summary(&diff_files);
+        let total_tokens: usize = manifest_entries_total_tokens(&snippets, &estimator);
+        print_summary(&diff_files, total_tokens, options.budget);
     }
 
     Ok(())
@@ -108,8 +141,82 @@ pub fn run(options: DiffCommandOptions) -> Result<()> {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Apply budget constraints and build manifest entries for all snippets.
+///
+/// Returns the included snippets and manifest entries for every snippet.
+/// If no budget is set, all snippets are included.
+/// Always includes at least one snippet even if it exceeds the budget.
+fn apply_budget_and_build_entries(
+    snippets: &[Snippet],
+    estimator: &dyn tokens::TokenEstimator,
+    budget: Option<usize>,
+) -> (Vec<Snippet>, Vec<ManifestEntry>) {
+    let mut included = Vec::new();
+    let mut entries = Vec::new();
+    let mut tokens_used: usize = 0;
+
+    for (i, snippet) in snippets.iter().enumerate() {
+        let token_est = estimator.estimate(&snippet.content);
+        let char_count = snippet.content.len();
+
+        let is_included = match budget {
+            None => true,
+            Some(b) => {
+                // Always include at least one snippet.
+                if included.is_empty() {
+                    true
+                } else {
+                    tokens_used + token_est <= b
+                }
+            }
+        };
+
+        if is_included {
+            tokens_used += token_est;
+            included.push(snippet.clone());
+        }
+
+        entries.push(ManifestEntry {
+            file_path: snippet.file_path.clone(),
+            start_line: snippet.start_line,
+            end_line: snippet.end_line,
+            token_estimate: token_est,
+            char_count,
+            reason: snippet.reason.clone(),
+            score: (snippets.len() - i) as f64, // order-based score
+            included: is_included,
+            language: infer_language(&snippet.file_path),
+        });
+    }
+
+    (included, entries)
+}
+
+/// Total tokens across all snippets (used for summary display).
+fn manifest_entries_total_tokens(
+    snippets: &[Snippet],
+    estimator: &dyn tokens::TokenEstimator,
+) -> usize {
+    snippets
+        .iter()
+        .map(|s| estimator.estimate(&s.content))
+        .sum()
+}
+
+/// Compute the manifest sibling path for a given output file.
+///
+/// `output.md` → `output.manifest.json`
+fn manifest_sibling_path(out_path: &std::path::Path) -> std::path::PathBuf {
+    let stem = out_path
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "output".to_string());
+    let parent = out_path.parent().unwrap_or(std::path::Path::new("."));
+    parent.join(format!("{stem}.manifest.json"))
+}
+
 /// Build an output [`Bundle`] from diff files and extracted snippets.
-fn build_bundle(diff_files: &[git::DiffFile], snippets: Vec<slicer::Snippet>) -> Bundle {
+fn build_bundle(diff_files: &[git::DiffFile], snippets: Vec<Snippet>) -> Bundle {
     let file_count = diff_files.len();
     let hunk_count: usize = diff_files.iter().map(|f| f.hunks.len()).sum();
 
@@ -137,10 +244,14 @@ fn build_bundle(diff_files: &[git::DiffFile], snippets: Vec<slicer::Snippet>) ->
     }
 }
 
-/// Infer a syntax-highlighting language identifier from a file extension.
+/// Infer a syntax-highlighting language identifier from a file path.
+///
+/// Checks the file extension first, then falls back to well-known
+/// filenames (e.g. `Dockerfile`, `.gitignore`).
 fn infer_language(path: &str) -> String {
+    // Try extension first.
     let ext = path.rsplit('.').next().unwrap_or("");
-    match ext {
+    let from_ext = match ext {
         "rs" => "rust",
         "ts" | "tsx" => "typescript",
         "js" | "jsx" => "javascript",
@@ -161,6 +272,29 @@ fn infer_language(path: &str) -> String {
         "html" | "htm" => "html",
         "css" => "css",
         "sql" => "sql",
+        "graphql" | "gql" => "graphql",
+        "proto" => "protobuf",
+        "tf" => "hcl",
+        "lock" => "toml",
+        _ => "",
+    };
+
+    if !from_ext.is_empty() {
+        return from_ext.to_string();
+    }
+
+    // Fall back to well-known filenames.
+    let filename = path.rsplit('/').next().unwrap_or(path);
+    match filename {
+        "Dockerfile" | "Containerfile" => "dockerfile",
+        "Makefile" | "GNUmakefile" => "makefile",
+        "Justfile" | "justfile" => "makefile",
+        "CMakeLists.txt" => "cmake",
+        ".gitignore" | ".dockerignore" | ".prettierignore" | ".eslintignore" => "gitignore",
+        ".env" | ".env.local" | ".env.example" => "dotenv",
+        "Gemfile" => "ruby",
+        "Rakefile" => "ruby",
+        "Vagrantfile" => "ruby",
         _ => "",
     }
     .to_string()
@@ -177,7 +311,7 @@ fn cli_format_to_output_format(fmt: &OutputFormat) -> Format {
 }
 
 /// Print a coloured summary of the diff to stderr.
-fn print_summary(diff_files: &[git::DiffFile]) {
+fn print_summary(diff_files: &[git::DiffFile], total_tokens: usize, budget: Option<usize>) {
     let added = diff_files
         .iter()
         .filter(|f| f.status == FileStatus::Added)
@@ -210,13 +344,19 @@ fn print_summary(diff_files: &[git::DiffFile]) {
         parts.push(format!("{renamed} renamed"));
     }
 
+    let budget_info = match budget {
+        Some(b) => format!(", ~{total_tokens} tokens (budget: {b})"),
+        None => format!(", ~{total_tokens} tokens"),
+    };
+
     eprintln!(
-        "{} {} file{} ({}), {} hunk{}",
+        "{} {} file{} ({}), {} hunk{}{}",
         "diff:".green().bold(),
         diff_files.len(),
         if diff_files.len() == 1 { "" } else { "s" },
         parts.join(", "),
         total_hunks,
         if total_hunks == 1 { "" } else { "s" },
+        budget_info,
     );
 }
