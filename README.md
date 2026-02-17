@@ -7,8 +7,11 @@ Fast, offline, no LLM calls. Builds optimized context bundles from your codebase
 ## Features
 
 - **Diff-aware context** — extract minimal, relevant snippets from git changes
+- **Token budgeting** — fit context into model token limits with greedy packing
+- **Manifest tracking** — know exactly what was included, excluded, and why
 - **Multiple output formats** — Markdown (LLM-ready), JSON, plain text, XML
 - **Smart slicing** — configurable context lines, overlapping hunk merging, hunks-only mode
+- **Model-aware** — different token estimation ratios for GPT-4, Claude, etc.
 - **Deterministic** — same repo state + same query = same output, every time
 - **Offline** — no network calls, no LLM APIs, runs entirely locally
 
@@ -36,20 +39,16 @@ contextsmith init
 # See what changed (unstaged working tree diff)
 contextsmith diff --stdout
 
-# Diff staged changes in markdown format
-contextsmith diff --staged --stdout
+# Diff with a token budget (fits ~500 tokens of context)
+contextsmith diff --budget 500 --stdout
 
-# Diff last 3 commits, write to file
-contextsmith diff HEAD~3..HEAD --out context.md
+# Diff to file (also creates a manifest.json sibling)
+contextsmith diff --budget 2000 --out context.md
 
-# Tight context (1 line around each change)
-contextsmith diff --context 1 --stdout
-
-# Raw hunks only (no file reading)
-contextsmith diff --hunks-only --stdout
-
-# JSON output for tooling
-contextsmith diff --format json --stdout
+# Full pipeline: capture → pack → explain
+contextsmith diff --format json --out bundle.json
+contextsmith pack bundle.json --budget 1000 --model claude --out packed.md
+contextsmith explain packed.manifest.json
 ```
 
 ## Commands
@@ -57,15 +56,17 @@ contextsmith diff --format json --stdout
 | Command     | Alias | Status          | Description                                      |
 |-------------|-------|-----------------|--------------------------------------------------|
 | `init`      |       | Implemented     | Bootstrap config and cache directory              |
-| `diff`      | `d`   | Implemented     | Gather context from git changes                   |
+| `diff`      | `d`   | Implemented     | Gather context from git changes with budget support |
+| `pack`      | `p`   | Implemented     | Repack a bundle into a token-budgeted output      |
+| `explain`   | `e`   | Implemented     | Show why each snippet was included or excluded    |
 | `collect`   | `c`   | Not yet         | Collect context by query, symbols, or patterns    |
-| `pack`      | `p`   | Not yet         | Pack snippets into a token-budgeted bundle        |
 | `trim`      |       | Not yet         | Trim existing content to fit a budget             |
 | `map`       |       | Not yet         | Generate project map (file tree, symbols, graph)  |
 | `stats`     |       | Not yet         | Show statistics for a context bundle              |
-| `explain`   | `e`   | Not yet         | Explain why each snippet was included             |
 
 ## `contextsmith diff`
+
+Gathers context from git changes with optional token budgeting.
 
 ```
 contextsmith diff [REV_RANGE] [OPTIONS]
@@ -78,10 +79,96 @@ contextsmith diff [REV_RANGE] [OPTIONS]
 | `--since <ref>`     | Changes since a timestamp or ref                |
 | `--hunks-only`      | Raw hunk content, no file context               |
 | `--context <N>`     | Lines of context around changes (default: 3)    |
+| `--budget <N>`      | Token budget — greedily include snippets to fit  |
 | `--include-related` | Pull in related symbols (not yet implemented)   |
 | `--format <fmt>`    | `markdown` / `json` / `plain` / `xml`           |
-| `--out <path>`      | Write output to file                            |
+| `--out <path>`      | Write output to file (also creates manifest.json) |
 | `--stdout`          | Write to stdout                                 |
+
+```bash
+# Unstaged changes with budget
+contextsmith diff --budget 2000 --stdout
+
+# Staged changes only
+contextsmith diff --staged --stdout
+
+# Last 3 commits to file
+contextsmith diff HEAD~3..HEAD --budget 4000 --out context.md
+
+# Raw hunks, JSON format
+contextsmith diff --hunks-only --format json --stdout
+```
+
+## `contextsmith pack`
+
+Repacks a JSON bundle (from `diff --format json --out`) into a token-budgeted output. Useful for iterating on budget/filters without re-running git.
+
+```
+contextsmith pack <BUNDLE> [OPTIONS]
+```
+
+| Flag                | Description                                     |
+|---------------------|-------------------------------------------------|
+| `--budget <N>`      | Token budget                                    |
+| `--chars <N>`       | Character budget (converted to tokens)          |
+| `--model <name>`    | Model for token estimation (`gpt-4`, `claude`)  |
+| `--reserve <N>`     | Reserve tokens for model response               |
+| `--must <path>`     | Force-include files matching this path           |
+| `--drop <path>`     | Exclude files matching this path                |
+| `--format <fmt>`    | `markdown` / `json` / `plain` / `xml`           |
+| `--out <path>`      | Write output to file (also creates manifest.json) |
+| `--stdout`          | Write to stdout                                 |
+
+```bash
+# Create a JSON bundle first
+contextsmith diff --format json --out bundle.json
+
+# Pack for GPT-4 with 4000 token budget
+contextsmith pack bundle.json --budget 4000 --out context.md
+
+# Pack for Claude with reserved response tokens
+contextsmith pack bundle.json --budget 2000 --model claude --reserve 500 --stdout
+
+# Force-include tests, exclude docs
+contextsmith pack bundle.json --budget 3000 --must tests/ --drop docs/ --stdout
+```
+
+## `contextsmith explain`
+
+Reads a manifest.json and prints a human-readable report of what was included/excluded and why.
+
+```
+contextsmith explain [MANIFEST] [OPTIONS]
+```
+
+| Flag                | Description                                     |
+|---------------------|-------------------------------------------------|
+| `--top <N>`         | Show only the top N entries                     |
+| `--detailed`        | Show char count, score, and language per entry   |
+| `--show-weights`    | Print ranking weights used for selection         |
+
+```bash
+# Explain a manifest
+contextsmith explain context.manifest.json
+
+# Top 5 entries with full details
+contextsmith explain context.manifest.json --detailed --top 5
+
+# Pass a directory (auto-discovers manifest.json inside)
+contextsmith explain ./output-dir/
+```
+
+### Token Estimation
+
+ContextSmith estimates tokens using character-count heuristics (no external tokenizer dependency):
+
+| Model family | Chars/token | Notes |
+|---|---|---|
+| GPT-4 / GPT-3.5 | ~4.0 | Default when no `--model` given |
+| Claude | ~3.5 | Slightly more tokens per character |
+| Unknown | ~4.0 | Conservative fallback |
+
+Accuracy is ±15-20% vs real BPE tokenizers — sufficient for budget planning. The trait-based design (`TokenEstimator`) supports plugging in real tokenizers later.
 
 ### Global Flags
 
@@ -128,7 +215,7 @@ enabled = true
 
 ## Project Status
 
-ContextSmith is in early development. The `init` and `diff` commands are functional. Remaining commands will be implemented incrementally — see the [CHANGELOG](CHANGELOG.md) for details.
+ContextSmith is in active development. Phase 1 (diff-first context bundler) is complete — `init`, `diff`, `pack`, and `explain` are fully functional with 90 tests. Remaining commands (`collect`, `trim`, `map`, `stats`) will be implemented in Phase 2. See the [CHANGELOG](CHANGELOG.md) for details.
 
 ## License
 
