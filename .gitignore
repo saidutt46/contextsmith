@@ -4,3 +4,7 @@
 *~
 .DS_Store
 .contextsmith/
+CONTEXT-HANDOFF-DOCS/
+CLAUDE.md
+
+./test-docs/
