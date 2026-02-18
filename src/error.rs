@@ -36,6 +36,9 @@ pub enum ContextSmithError {
     #[error("budget exceeded: requested {requested}, available {available}")]
     BudgetExceeded { requested: usize, available: usize },
 
+    #[error("invalid pattern '{pattern}': {message}")]
+    Pattern { pattern: String, message: String },
+
     #[error("command '{command}' is not yet implemented")]
     NotImplemented { command: String },
 }
@@ -75,6 +78,13 @@ impl ContextSmithError {
     pub fn validation(field: impl Into<String>, message: impl Into<String>) -> Self {
         Self::Validation {
             field: field.into(),
+            message: message.into(),
+        }
+    }
+
+    pub fn pattern(pattern: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::Pattern {
+            pattern: pattern.into(),
             message: message.into(),
         }
     }
