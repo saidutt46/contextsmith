@@ -9,8 +9,9 @@ use std::path::PathBuf;
 use colored::Colorize;
 
 use crate::cli::OutputFormat;
+use crate::config::Config;
 use crate::error::{ContextSmithError, Result};
-use crate::manifest::{self, ManifestEntry};
+use crate::manifest::{self, ManifestEntry, WeightsUsed};
 use crate::output::{self, Bundle, BundleSection, FormatOptions};
 use crate::tokens::{self, TokenEstimator};
 use crate::utils;
@@ -46,6 +47,8 @@ pub struct PackCommandOptions {
     pub out: Option<PathBuf>,
     /// Suppress non-essential output.
     pub quiet: bool,
+    /// Path to config file.
+    pub config_path: Option<std::path::PathBuf>,
 }
 
 /// Run the pack command end-to-end.
@@ -53,6 +56,7 @@ pub fn run(options: PackCommandOptions) -> Result<()> {
     // Step 1: Read input bundle.
     let bundle_path = options
         .bundle
+        .clone()
         .ok_or_else(|| ContextSmithError::validation("bundle", "input bundle file is required"))?;
 
     let content = std::fs::read_to_string(&bundle_path).map_err(|e| {
@@ -137,12 +141,21 @@ pub fn run(options: PackCommandOptions) -> Result<()> {
 
     // Step 7: Write manifest alongside output.
     if let Some(ref out_path) = options.out {
-        let m = manifest::build_manifest(
+        let config = load_config(&options)?;
+        let weights = &config.ranking_weights;
+        let mut m = manifest::build_manifest(
             entries.clone(),
             estimator.model_name(),
             options.budget,
             reserve,
         );
+        m.summary.weights_used = Some(WeightsUsed {
+            text: weights.text,
+            diff: weights.diff,
+            recency: weights.recency,
+            proximity: weights.proximity,
+            test: weights.test,
+        });
         let manifest_path = utils::manifest_sibling_path(out_path);
         manifest::write_manifest(&m, &manifest_path)?;
         if !options.quiet {
@@ -254,6 +267,15 @@ fn make_entry(
         score: 0.0,
         included,
         language: section.language.clone(),
+    }
+}
+
+/// Load config from explicit path or discovery.
+fn load_config(options: &PackCommandOptions) -> Result<Config> {
+    let config_path = crate::config::find_config_file(options.config_path.as_deref());
+    match config_path {
+        Some(p) => Config::load(&p),
+        None => Ok(Config::default()),
     }
 }
 

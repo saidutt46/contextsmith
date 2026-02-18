@@ -92,6 +92,7 @@ fn run(cli: Cli) -> Result<(), ContextSmithError> {
                 quiet: cli.quiet,
                 budget,
                 model: None,
+                config_path: cli.config,
             })
         }
         Command::Collect {
@@ -153,6 +154,7 @@ fn run(cli: Cli) -> Result<(), ContextSmithError> {
             stdout,
             out,
             quiet: cli.quiet,
+            config_path: cli.config,
         }),
         Command::Trim { .. } => commands::not_implemented("trim"),
         Command::Map { .. } => commands::not_implemented("map"),

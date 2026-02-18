@@ -497,8 +497,10 @@ fn explain_show_weights() {
         .args(["explain", manifest_path.to_str().unwrap(), "--show-weights"])
         .assert()
         .success()
-        // Should show "No ranking weights" since diff uses order-based selection.
-        .stdout(predicate::str::contains("No ranking weights"));
+        // Should show actual ranking weights now that diff populates weights_used.
+        .stdout(predicate::str::contains("Ranking weights:"))
+        .stdout(predicate::str::contains("text:"))
+        .stdout(predicate::str::contains("diff:"));
 }
 
 #[test]
