@@ -6,6 +6,7 @@ pub mod git;
 pub mod indexer;
 pub mod manifest;
 pub mod output;
+pub mod ranker;
 pub mod scanner;
 pub mod slicer;
 pub mod tokens;
