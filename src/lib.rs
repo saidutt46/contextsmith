@@ -9,5 +9,6 @@ pub mod output;
 pub mod ranker;
 pub mod scanner;
 pub mod slicer;
+pub mod symbols;
 pub mod tokens;
 pub mod utils;

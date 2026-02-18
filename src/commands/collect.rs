@@ -14,7 +14,9 @@ use crate::error::{ContextSmithError, Result};
 use crate::indexer;
 use crate::manifest::{self, ManifestEntry};
 use crate::output::{self, Bundle, BundleSection, FormatOptions};
+use crate::ranker;
 use crate::scanner;
+use crate::symbols::{RegexSymbolFinder, SymbolFinder};
 use crate::tokens::{self, TokenEstimator};
 use crate::utils;
 
@@ -79,9 +81,7 @@ pub fn run(options: CollectCommandOptions) -> Result<()> {
     let (sections, summary) = match mode {
         CollectMode::Files => collect_files(&options)?,
         CollectMode::Grep => collect_grep(&options, &config)?,
-        CollectMode::Symbol => {
-            return Err(ContextSmithError::not_implemented("collect --symbol"));
-        }
+        CollectMode::Symbol => collect_symbol(&options, &config)?,
     };
 
     if sections.is_empty() {
@@ -265,6 +265,7 @@ fn collect_grep(
     // Group matches by file and build sections with context.
     let grouped = indexer::group_by_file(&result.matches);
     let mut sections = Vec::new();
+    let mut match_counts = Vec::new();
 
     // Sort file paths for deterministic output.
     let mut file_paths: Vec<&String> = grouped.keys().collect();
@@ -312,8 +313,14 @@ fn collect_grep(
                     pattern,
                 ),
             });
+            match_counts.push(match_count);
         }
     }
+
+    // Rank sections using TF-IDF scoring.
+    let weights = config.ranking_weights.clone();
+    let ranked = ranker::rank_snippets(&sections, &match_counts, &weights);
+    let sections: Vec<BundleSection> = ranked.iter().map(|r| r.section.clone()).collect();
 
     let summary = format!(
         "grep '{}': {} match{} in {} file{}",
@@ -326,6 +333,106 @@ fn collect_grep(
 
     Ok((sections, summary))
 }
+
+// ---------------------------------------------------------------------------
+// collect --symbol
+// ---------------------------------------------------------------------------
+
+/// Collect context by finding symbol definitions in the codebase.
+///
+/// Uses the `SymbolFinder` trait (regex-based in Phase 2) to locate
+/// definitions, then extracts context around each definition.
+fn collect_symbol(
+    options: &CollectCommandOptions,
+    config: &Config,
+) -> Result<(Vec<BundleSection>, String)> {
+    let symbol = options.symbol.as_deref().unwrap_or("");
+
+    // Scan the repo for files.
+    let mut scan_options = scanner::scan_options_from_config(config, &options.root);
+    scan_options.lang_filter = options.lang.clone();
+    scan_options.path_filter = options.path.clone();
+    scan_options.exclude_patterns = options.exclude.clone();
+
+    let files = scanner::scan(&scan_options)?;
+
+    // Find symbol definitions.
+    let finder = RegexSymbolFinder;
+    let matches = finder.find_definitions(&files, symbol)?;
+
+    if matches.is_empty() {
+        return Ok((Vec::new(), format!("no definitions found for '{symbol}'")));
+    }
+
+    // Group matches by file and build sections with context.
+    let grouped = indexer::group_by_file(&matches);
+    let mut sections = Vec::new();
+    let mut match_counts = Vec::new();
+
+    let mut file_paths: Vec<&String> = grouped.keys().collect();
+    file_paths.sort();
+
+    if let Some(max) = options.max_files {
+        file_paths.truncate(max);
+    }
+
+    for file_path in file_paths {
+        let file_matches = &grouped[file_path];
+
+        let scanned = files.iter().find(|f| &f.rel_path == file_path);
+        let content = match scanned {
+            Some(f) => match std::fs::read_to_string(&f.abs_path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            },
+            None => continue,
+        };
+
+        let file_match_refs: Vec<&indexer::TextMatch> = file_matches.to_vec();
+        let lines: Vec<&str> = content.lines().collect();
+        let total_lines = lines.len();
+
+        let ranges = compute_match_ranges(&file_match_refs, options.context_lines, total_lines);
+
+        for (start, end) in ranges {
+            let snippet_content = lines[start.saturating_sub(1)..end.min(total_lines)].join("\n");
+
+            let match_count = file_matches
+                .iter()
+                .filter(|m| m.line_number >= start && m.line_number <= end)
+                .count();
+
+            sections.push(BundleSection {
+                file_path: file_path.clone(),
+                language: utils::infer_language(file_path),
+                content: snippet_content,
+                reason: format!("definition of '{symbol}'"),
+            });
+            match_counts.push(match_count);
+        }
+    }
+
+    // Rank sections using the ranker.
+    let weights = config.ranking_weights.clone();
+    let ranked = ranker::rank_snippets(&sections, &match_counts, &weights);
+
+    let ranked_sections: Vec<BundleSection> = ranked.iter().map(|r| r.section.clone()).collect();
+
+    let summary = format!(
+        "symbol '{}': {} definition{} in {} file{}",
+        symbol,
+        matches.len(),
+        if matches.len() == 1 { "" } else { "s" },
+        grouped.len(),
+        if grouped.len() == 1 { "" } else { "s" },
+    );
+
+    Ok((ranked_sections, summary))
+}
+
+// ---------------------------------------------------------------------------
+// Range computation
+// ---------------------------------------------------------------------------
 
 /// Compute merged line ranges around grep matches with context.
 ///

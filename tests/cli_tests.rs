@@ -679,3 +679,62 @@ fn collect_files_output_creates_manifest() {
         "manifest should be created alongside output"
     );
 }
+
+#[test]
+fn collect_symbol_finds_definitions() {
+    let dir = setup_git_repo();
+    cmd()
+        .args([
+            "collect",
+            "--symbol",
+            "main",
+            "--root",
+            dir.path().to_str().unwrap(),
+            "--stdout",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("main"));
+}
+
+#[test]
+fn collect_symbol_no_matches_shows_message() {
+    let dir = setup_git_repo();
+    cmd()
+        .args([
+            "collect",
+            "--symbol",
+            "NONEXISTENT_SYMBOL_XYZ",
+            "--root",
+            dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No matching"));
+}
+
+#[test]
+fn collect_grep_with_lang_filter() {
+    let dir = setup_git_repo();
+    // Add a Python file alongside the Rust file.
+    std::fs::write(
+        dir.path().join("script.py"),
+        "def main():\n    print('hello')\n",
+    )
+    .unwrap();
+
+    cmd()
+        .args([
+            "collect",
+            "--grep",
+            "main",
+            "--lang",
+            "rust",
+            "--root",
+            dir.path().to_str().unwrap(),
+            "--stdout",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("main"));
+}
