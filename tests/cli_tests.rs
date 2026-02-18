@@ -738,3 +738,61 @@ fn collect_grep_with_lang_filter() {
         .success()
         .stdout(predicate::str::contains("main"));
 }
+
+// -----------------------------------------------------------------------
+// Stats command tests
+// -----------------------------------------------------------------------
+
+#[test]
+fn stats_repo_scan_shows_file_count() {
+    let dir = setup_git_repo();
+    cmd()
+        .args(["stats", "--root", dir.path().to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("files:"));
+}
+
+#[test]
+fn stats_repo_scan_with_tokens() {
+    let dir = setup_git_repo();
+    cmd()
+        .args(["stats", "--root", dir.path().to_str().unwrap(), "--tokens"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("total tokens:"));
+}
+
+#[test]
+fn stats_repo_scan_by_lang() {
+    let dir = setup_git_repo();
+    cmd()
+        .args(["stats", "--root", dir.path().to_str().unwrap(), "--by-lang"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("By language:"));
+}
+
+#[test]
+fn stats_bundle_mode_reads_manifest() {
+    let dir = setup_git_repo();
+    let manifest_path = create_manifest(&dir);
+
+    cmd()
+        .args(["stats", manifest_path.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("total tokens:"));
+}
+
+#[test]
+fn stats_bundle_mode_top_files() {
+    let dir = setup_git_repo();
+    let manifest_path = create_manifest(&dir);
+
+    cmd()
+        .args(["stats", manifest_path.to_str().unwrap(), "--top-files", "5"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Top 5 files"));
+}
