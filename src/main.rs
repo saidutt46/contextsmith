@@ -6,6 +6,7 @@ use colored::Colorize;
 
 use contextsmith::cli::{Cli, ColorMode, Command};
 use contextsmith::commands;
+use contextsmith::commands::collect::CollectCommandOptions;
 use contextsmith::commands::diff::DiffCommandOptions;
 use contextsmith::commands::explain::ExplainCommandOptions;
 use contextsmith::commands::init::{InitOptions, InitResult};
@@ -92,7 +93,40 @@ fn run(cli: Cli) -> Result<(), ContextSmithError> {
                 model: None,
             })
         }
-        Command::Collect { .. } => commands::not_implemented("collect"),
+        Command::Collect {
+            files,
+            grep,
+            symbol,
+            exclude,
+            lang,
+            path,
+            max_files,
+            format,
+            out,
+            stdout,
+            budget,
+            ..
+        } => {
+            let root = resolve_root(cli.root)?;
+            commands::collect::run(CollectCommandOptions {
+                root,
+                files,
+                grep,
+                symbol,
+                exclude,
+                lang,
+                path,
+                context_lines: 3,
+                max_files,
+                format,
+                out,
+                stdout,
+                quiet: cli.quiet,
+                budget,
+                model: None,
+                config_path: cli.config,
+            })
+        }
         Command::Pack {
             bundle,
             budget,

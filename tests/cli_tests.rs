@@ -72,9 +72,9 @@ fn help_shows_all_commands() {
 
 #[test]
 fn unimplemented_command_shows_error() {
-    // `collect` is still stubbed — verify it reports not-implemented.
+    // `trim` is still stubbed — verify it reports not-implemented.
     cmd()
-        .arg("collect")
+        .arg("trim")
         .assert()
         .failure()
         .stderr(predicate::str::contains("not yet implemented"));
@@ -528,4 +528,154 @@ fn explain_directory_with_manifest() {
         .assert()
         .success()
         .stdout(predicate::str::contains("summary:"));
+}
+
+// -----------------------------------------------------------------------
+// Collect command tests
+// -----------------------------------------------------------------------
+
+#[test]
+fn collect_no_mode_shows_error() {
+    let dir = setup_git_repo();
+    cmd()
+        .args(["collect", "--root", dir.path().to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--files, --grep, or --symbol"));
+}
+
+#[test]
+fn collect_files_reads_file() {
+    let dir = setup_git_repo();
+    cmd()
+        .args([
+            "collect",
+            "--files",
+            "hello.rs",
+            "--root",
+            dir.path().to_str().unwrap(),
+            "--stdout",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("hello, world!"));
+}
+
+#[test]
+fn collect_files_json_format() {
+    let dir = setup_git_repo();
+    let output = cmd()
+        .args([
+            "collect",
+            "--files",
+            "hello.rs",
+            "--root",
+            dir.path().to_str().unwrap(),
+            "--format",
+            "json",
+            "--stdout",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let parsed: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(parsed["sections"].is_array());
+    assert!(!parsed["sections"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn collect_files_missing_file_errors() {
+    let dir = setup_git_repo();
+    cmd()
+        .args([
+            "collect",
+            "--files",
+            "nonexistent.rs",
+            "--root",
+            dir.path().to_str().unwrap(),
+            "--stdout",
+        ])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn collect_grep_finds_matches() {
+    let dir = setup_git_repo();
+    cmd()
+        .args([
+            "collect",
+            "--grep",
+            "println",
+            "--root",
+            dir.path().to_str().unwrap(),
+            "--stdout",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("println"));
+}
+
+#[test]
+fn collect_grep_no_matches_shows_message() {
+    let dir = setup_git_repo();
+    cmd()
+        .args([
+            "collect",
+            "--grep",
+            "XYZNONEXISTENT999",
+            "--root",
+            dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No matching"));
+}
+
+#[test]
+fn collect_files_with_budget() {
+    let dir = setup_git_repo();
+    cmd()
+        .args([
+            "collect",
+            "--files",
+            "hello.rs",
+            "--root",
+            dir.path().to_str().unwrap(),
+            "--budget",
+            "5000",
+            "--stdout",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("hello"));
+}
+
+#[test]
+fn collect_files_output_creates_manifest() {
+    let dir = setup_git_repo();
+    let out_path = dir.path().join("collected.md");
+
+    cmd()
+        .args([
+            "collect",
+            "--files",
+            "hello.rs",
+            "--root",
+            dir.path().to_str().unwrap(),
+            "--budget",
+            "5000",
+            "--out",
+            out_path.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    assert!(out_path.exists());
+    let manifest_path = dir.path().join("collected.manifest.json");
+    assert!(
+        manifest_path.exists(),
+        "manifest should be created alongside output"
+    );
 }
