@@ -13,9 +13,10 @@ use crate::cli::OutputFormat;
 use crate::error::Result;
 use crate::git::{self, DiffOptions, FileStatus};
 use crate::manifest::{self, ManifestEntry};
-use crate::output::{self, Bundle, BundleSection, Format, FormatOptions};
+use crate::output::{self, Bundle, BundleSection, FormatOptions};
 use crate::slicer::{self, SliceOptions, Snippet};
 use crate::tokens::{self, TokenEstimator};
+use crate::utils;
 
 // ---------------------------------------------------------------------------
 // Public interface
@@ -102,7 +103,7 @@ pub fn run(options: DiffCommandOptions) -> Result<()> {
     let bundle = build_bundle(&diff_files, included_snippets);
 
     // Step 5: Format and write output.
-    let format = cli_format_to_output_format(&options.format);
+    let format = utils::cli_format_to_output_format(&options.format);
     let formatted = output::format_bundle(&bundle, format)?;
     output::write_output(
         &formatted,
@@ -117,7 +118,7 @@ pub fn run(options: DiffCommandOptions) -> Result<()> {
     if let Some(ref out_path) = options.out {
         let manifest =
             manifest::build_manifest(manifest_entries, estimator.model_name(), options.budget, 0);
-        let manifest_path = manifest_sibling_path(out_path);
+        let manifest_path = utils::manifest_sibling_path(out_path);
         manifest::write_manifest(&manifest, &manifest_path)?;
         if !options.quiet {
             eprintln!(
@@ -185,7 +186,7 @@ fn apply_budget_and_build_entries(
             reason: snippet.reason.clone(),
             score: (snippets.len() - i) as f64, // order-based score
             included: is_included,
-            language: infer_language(&snippet.file_path),
+            language: utils::infer_language(&snippet.file_path),
         });
     }
 
@@ -203,18 +204,6 @@ fn manifest_entries_total_tokens(
         .sum()
 }
 
-/// Compute the manifest sibling path for a given output file.
-///
-/// `output.md` → `output.manifest.json`
-fn manifest_sibling_path(out_path: &std::path::Path) -> std::path::PathBuf {
-    let stem = out_path
-        .file_stem()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_else(|| "output".to_string());
-    let parent = out_path.parent().unwrap_or(std::path::Path::new("."));
-    parent.join(format!("{stem}.manifest.json"))
-}
-
 /// Build an output [`Bundle`] from diff files and extracted snippets.
 fn build_bundle(diff_files: &[git::DiffFile], snippets: Vec<Snippet>) -> Bundle {
     let file_count = diff_files.len();
@@ -223,7 +212,7 @@ fn build_bundle(diff_files: &[git::DiffFile], snippets: Vec<Snippet>) -> Bundle 
     let sections: Vec<BundleSection> = snippets
         .into_iter()
         .map(|s| BundleSection {
-            language: infer_language(&s.file_path),
+            language: utils::infer_language(&s.file_path),
             file_path: s.file_path,
             content: s.content,
             reason: s.reason,
@@ -241,72 +230,6 @@ fn build_bundle(diff_files: &[git::DiffFile], snippets: Vec<Snippet>) -> Bundle 
             if sections.len() == 1 { "" } else { "s" },
         ),
         sections,
-    }
-}
-
-/// Infer a syntax-highlighting language identifier from a file path.
-///
-/// Checks the file extension first, then falls back to well-known
-/// filenames (e.g. `Dockerfile`, `.gitignore`).
-fn infer_language(path: &str) -> String {
-    // Try extension first.
-    let ext = path.rsplit('.').next().unwrap_or("");
-    let from_ext = match ext {
-        "rs" => "rust",
-        "ts" | "tsx" => "typescript",
-        "js" | "jsx" => "javascript",
-        "py" => "python",
-        "go" => "go",
-        "rb" => "ruby",
-        "java" => "java",
-        "c" | "h" => "c",
-        "cpp" | "cc" | "cxx" | "hpp" => "cpp",
-        "swift" => "swift",
-        "kt" | "kts" => "kotlin",
-        "sh" | "bash" | "zsh" => "bash",
-        "md" => "markdown",
-        "toml" => "toml",
-        "yaml" | "yml" => "yaml",
-        "json" => "json",
-        "xml" => "xml",
-        "html" | "htm" => "html",
-        "css" => "css",
-        "sql" => "sql",
-        "graphql" | "gql" => "graphql",
-        "proto" => "protobuf",
-        "tf" => "hcl",
-        "lock" => "toml",
-        _ => "",
-    };
-
-    if !from_ext.is_empty() {
-        return from_ext.to_string();
-    }
-
-    // Fall back to well-known filenames.
-    let filename = path.rsplit('/').next().unwrap_or(path);
-    match filename {
-        "Dockerfile" | "Containerfile" => "dockerfile",
-        "Makefile" | "GNUmakefile" => "makefile",
-        "Justfile" | "justfile" => "makefile",
-        "CMakeLists.txt" => "cmake",
-        ".gitignore" | ".dockerignore" | ".prettierignore" | ".eslintignore" => "gitignore",
-        ".env" | ".env.local" | ".env.example" => "dotenv",
-        "Gemfile" => "ruby",
-        "Rakefile" => "ruby",
-        "Vagrantfile" => "ruby",
-        _ => "",
-    }
-    .to_string()
-}
-
-/// Map the clap [`OutputFormat`] to the library [`Format`].
-fn cli_format_to_output_format(fmt: &OutputFormat) -> Format {
-    match fmt {
-        OutputFormat::Markdown => Format::Markdown,
-        OutputFormat::Json => Format::Json,
-        OutputFormat::Plain => Format::Plain,
-        OutputFormat::Xml => Format::Xml,
     }
 }
 

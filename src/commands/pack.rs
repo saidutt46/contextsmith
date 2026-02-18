@@ -11,8 +11,9 @@ use colored::Colorize;
 use crate::cli::OutputFormat;
 use crate::error::{ContextSmithError, Result};
 use crate::manifest::{self, ManifestEntry};
-use crate::output::{self, Bundle, BundleSection, Format, FormatOptions};
+use crate::output::{self, Bundle, BundleSection, FormatOptions};
 use crate::tokens::{self, TokenEstimator};
+use crate::utils;
 
 // ---------------------------------------------------------------------------
 // Public interface
@@ -123,7 +124,7 @@ pub fn run(options: PackCommandOptions) -> Result<()> {
     };
 
     // Step 6: Format and write.
-    let format = cli_format_to_output_format(&options.format);
+    let format = utils::cli_format_to_output_format(&options.format);
     let formatted = output::format_bundle(&output_bundle, format)?;
     output::write_output(
         &formatted,
@@ -142,7 +143,7 @@ pub fn run(options: PackCommandOptions) -> Result<()> {
             options.budget,
             reserve,
         );
-        let manifest_path = manifest_sibling_path(out_path);
+        let manifest_path = utils::manifest_sibling_path(out_path);
         manifest::write_manifest(&m, &manifest_path)?;
         if !options.quiet {
             eprintln!(
@@ -254,26 +255,6 @@ fn make_entry(
         included,
         language: section.language.clone(),
     }
-}
-
-/// Map the clap [`OutputFormat`] to the library [`Format`].
-fn cli_format_to_output_format(fmt: &OutputFormat) -> Format {
-    match fmt {
-        OutputFormat::Markdown => Format::Markdown,
-        OutputFormat::Json => Format::Json,
-        OutputFormat::Plain => Format::Plain,
-        OutputFormat::Xml => Format::Xml,
-    }
-}
-
-/// Compute the manifest sibling path for a given output file.
-fn manifest_sibling_path(out_path: &std::path::Path) -> std::path::PathBuf {
-    let stem = out_path
-        .file_stem()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_else(|| "output".to_string());
-    let parent = out_path.parent().unwrap_or(std::path::Path::new("."));
-    parent.join(format!("{stem}.manifest.json"))
 }
 
 // ---------------------------------------------------------------------------
