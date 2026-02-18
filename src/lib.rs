@@ -5,6 +5,7 @@ pub mod error;
 pub mod git;
 pub mod manifest;
 pub mod output;
+pub mod scanner;
 pub mod slicer;
 pub mod tokens;
 pub mod utils;
