@@ -188,7 +188,7 @@ fn validate_mode(options: &CollectCommandOptions) -> Result<CollectMode> {
     }
     Err(ContextSmithError::validation(
         "mode",
-        "at least one of --files, --grep, or --symbol must be specified",
+        "at least one of <query>, --files, --grep, or --symbol must be specified",
     ))
 }
 

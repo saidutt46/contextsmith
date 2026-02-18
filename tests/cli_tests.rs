@@ -543,7 +543,9 @@ fn collect_no_mode_shows_error() {
         .args(["collect", "--root", dir.path().to_str().unwrap()])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("--files, --grep, or --symbol"));
+        .stderr(predicate::str::contains(
+            "<query>, --files, --grep, or --symbol",
+        ));
 }
 
 #[test]
@@ -739,6 +741,41 @@ fn collect_grep_with_lang_filter() {
         .assert()
         .success()
         .stdout(predicate::str::contains("main"));
+}
+
+#[test]
+fn collect_positional_query_acts_as_grep() {
+    let dir = setup_git_repo();
+    cmd()
+        .args([
+            "collect",
+            "hello",
+            "--root",
+            dir.path().to_str().unwrap(),
+            "--stdout",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("hello"));
+}
+
+#[test]
+fn collect_explicit_grep_overrides_query() {
+    let dir = setup_git_repo();
+    // Positional query is "nonexistent", but --grep "hello" should take precedence.
+    cmd()
+        .args([
+            "collect",
+            "nonexistent_xyz",
+            "--grep",
+            "hello",
+            "--root",
+            dir.path().to_str().unwrap(),
+            "--stdout",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("hello"));
 }
 
 // -----------------------------------------------------------------------

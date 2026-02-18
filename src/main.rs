@@ -96,6 +96,7 @@ fn run(cli: Cli) -> Result<(), ContextSmithError> {
             })
         }
         Command::Collect {
+            query,
             files,
             grep,
             symbol,
@@ -110,10 +111,12 @@ fn run(cli: Cli) -> Result<(), ContextSmithError> {
             ..
         } => {
             let root = resolve_root(cli.root)?;
+            // Treat positional query as implicit --grep when no explicit mode is set.
+            let effective_grep = grep.or(query);
             commands::collect::run(CollectCommandOptions {
                 root,
                 files,
-                grep,
+                grep: effective_grep,
                 symbol,
                 exclude,
                 lang,
