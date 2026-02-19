@@ -41,6 +41,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `--top N` to limit output, `--detailed` for scoring info
   - `--show-weights` to display ranking weights
   - Supports file path or directory input (auto-discovers `manifest.json`)
+- **`contextsmith collect`** — collect context from explicit files, grep patterns, and symbol definitions
+  - Supports `--files`, positional query / `--grep`, `--symbol`, `--lang`, `--exclude`, `--max-files`, `--budget`
+  - Uses deterministic TF-IDF-style ranking and supports output manifests
+- **`contextsmith stats`** — repository and bundle statistics
+  - Repo mode: file counts, byte totals, optional token estimates and language breakdowns
+  - Bundle mode: reads manifest summaries and top token-consuming snippets/files
 - **Config system** — `contextsmith.toml` with ignore patterns, generated file patterns, token budgets, ranking weights, language definitions, cache settings
 - **Error handling** — structured error types with semantic helpers (`is_user_error()`, `is_retryable()`)
 - **CLI skeleton** — all 8 subcommands defined with full argument parsing: init, diff, collect, pack, trim, map, stats, explain
@@ -48,6 +54,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Not Yet Implemented
 
-- `collect`, `trim`, `map`, `stats` commands (return "not yet implemented" error)
+- `trim`, `map` commands (return "not yet implemented" error)
 - AST parsing and symbol expansion
-- Ranking and scoring (currently order-based)
+- Advanced ranking signals beyond text relevance (diff/recency/proximity/test are currently baseline-weighted)

@@ -59,10 +59,10 @@ contextsmith explain packed.manifest.json
 | `diff`      | `d`   | Implemented     | Gather context from git changes with budget support |
 | `pack`      | `p`   | Implemented     | Repack a bundle into a token-budgeted output      |
 | `explain`   | `e`   | Implemented     | Show why each snippet was included or excluded    |
-| `collect`   | `c`   | Not yet         | Collect context by query, symbols, or patterns    |
+| `collect`   | `c`   | Implemented     | Collect context by query, symbols, or patterns    |
 | `trim`      |       | Not yet         | Trim existing content to fit a budget             |
 | `map`       |       | Not yet         | Generate project map (file tree, symbols, graph)  |
-| `stats`     |       | Not yet         | Show statistics for a context bundle              |
+| `stats`     |       | Implemented     | Show statistics for a context bundle              |
 
 ## `contextsmith diff`
 
@@ -215,7 +215,7 @@ enabled = true
 
 ## Project Status
 
-ContextSmith is in active development. Phase 1 (diff-first context bundler) is complete — `init`, `diff`, `pack`, and `explain` are fully functional with 90 tests. Remaining commands (`collect`, `trim`, `map`, `stats`) will be implemented in Phase 2. See the [CHANGELOG](CHANGELOG.md) for details.
+ContextSmith is in active development. `init`, `diff`, `collect`, `pack`, `stats`, and `explain` are functional with 150 automated tests (105 unit + 44 integration + 1 doctest). Remaining planned commands are `trim` and `map`. See the [CHANGELOG](CHANGELOG.md) for details.
 
 ## License
 
