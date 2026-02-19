@@ -359,6 +359,27 @@ fn diff_out_prints_manifest_and_summary_to_stderr() {
 }
 
 #[test]
+fn diff_quiet_suppresses_non_essential_stderr() {
+    let dir = setup_git_repo();
+    let out_file = dir.path().join("ctx.md");
+
+    cmd()
+        .args([
+            "diff",
+            "--root",
+            dir.path().to_str().unwrap(),
+            "--budget",
+            "5000",
+            "--quiet",
+            "--out",
+            out_file.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
+}
+
+#[test]
 fn diff_small_budget_still_includes_one_snippet() {
     let dir = setup_git_repo();
     // Budget of 1 token — should still include at least one snippet.
@@ -475,6 +496,27 @@ fn pack_with_output_prints_manifest_and_summary_to_stderr() {
         .stderr(predicate::str::contains("manifest written to"))
         .stderr(predicate::str::contains("pack:"))
         .stderr(predicate::str::contains("(budget: 5000)"));
+}
+
+#[test]
+fn pack_quiet_suppresses_non_essential_stderr() {
+    let dir = setup_git_repo();
+    let bundle_path = create_json_bundle(&dir);
+    let out_path = dir.path().join("packed.md");
+
+    cmd()
+        .args([
+            "pack",
+            bundle_path.to_str().unwrap(),
+            "--budget",
+            "5000",
+            "--quiet",
+            "--out",
+            out_path.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
 }
 
 #[test]
@@ -750,6 +792,29 @@ fn collect_files_output_prints_manifest_and_summary_to_stderr() {
         .stderr(predicate::str::contains("manifest written to"))
         .stderr(predicate::str::contains("collect:"))
         .stderr(predicate::str::contains("(budget: 5000)"));
+}
+
+#[test]
+fn collect_quiet_suppresses_non_essential_stderr() {
+    let dir = setup_git_repo();
+    let out_path = dir.path().join("collected.md");
+
+    cmd()
+        .args([
+            "collect",
+            "--files",
+            "hello.rs",
+            "--root",
+            dir.path().to_str().unwrap(),
+            "--budget",
+            "5000",
+            "--quiet",
+            "--out",
+            out_path.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
 }
 
 #[test]

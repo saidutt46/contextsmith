@@ -11,28 +11,28 @@ Focus: Group A (cleanup + reliability), with user-facing doc alignment and outpu
   - Added `collect` command section.
   - Added `stats` command section.
   - Clarified which `collect` flags are wired vs accepted-but-currently-ignored.
+  - Added explicit **Output Contract** section for stderr/status behavior and `--quiet` behavior.
 - Added output-contract integration tests in `tests/cli_tests.rs`:
   - `diff_out_prints_manifest_and_summary_to_stderr`
   - `collect_files_output_prints_manifest_and_summary_to_stderr`
   - `pack_with_output_prints_manifest_and_summary_to_stderr`
+- Added quiet-mode contract tests in `tests/cli_tests.rs`:
+  - `diff_quiet_suppresses_non_essential_stderr`
+  - `collect_quiet_suppresses_non_essential_stderr`
+  - `pack_quiet_suppresses_non_essential_stderr`
 
 ## Measurable Verification
 
-### 1) Command behavior parity check
-Commands:
-```bash
-./target/debug/contextsmith collect --grep "Config" --root . --stdout
-./target/debug/contextsmith collect --grep "Config" --root . --span "1:2" --stdout
-```
-Observed:
-- `--span` appears in CLI help.
-- Outputs are currently identical for these inputs, confirming docs accurately state `--span` is accepted but not wired.
+### 1) Output contract behavior
+Validated via integration tests:
+- For `--out` workflows, stderr contains:
+  - `manifest written to`
+  - command summary prefixes (`diff:`, `collect:`, `pack:`)
+  - budget suffix when set (`(budget: N)`)
 
-### 2) Output contract stability tests
-Added assertions that for `--out` workflows:
-- stderr includes `manifest written to`
-- stderr includes command summary prefix (`diff:`, `collect:`, `pack:`)
-- budgeted commands include `(budget: N)` in summary output
+### 2) Quiet-mode behavior
+Validated via integration tests:
+- `--quiet` suppresses non-essential stderr for `diff`, `collect`, and `pack`.
 
 ### 3) Full validation gate
 Command:
@@ -43,15 +43,15 @@ Result: PASS
 
 Observed test totals:
 - Unit tests: `105 passed`
-- Integration tests: `47 passed` (was 44; +3 new A3 contract tests)
+- Integration tests: `50 passed` (was 44 baseline; +6 contract/quiet tests)
 - Doctests: `1 passed`
-- Total: `153 passed`, `0 failed`
+- Total: `156 passed`, `0 failed`
 
 ## Current Status
-- Group A A3 is in progress with concrete guardrails now added.
-- Internal `test-docs/` not modified per instruction.
+- Group A A3 has concrete coverage for user-visible output contract and `--quiet` semantics.
+- Internal `test-docs/` remains intentionally untouched per instruction.
 
 ## Next Group A Steps
-1. Review remaining user-facing docs for any command flag drift in tracked files only.
-2. Decide whether to codify a small "command output contract" section in `README.md`.
-3. Prepare a focused PR with these Group A changes.
+1. Add focused checks for error message consistency (validation field naming and path-context format).
+2. Add deterministic ordering assertions for explain output ties (if missing in integration coverage).
+3. Prepare Group A PR with scoped changes and measurable outputs.

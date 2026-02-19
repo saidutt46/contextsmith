@@ -253,6 +253,16 @@ Accuracy is ±15-20% vs real BPE tokenizers — sufficient for budget planning. 
 | `--json`           | Output as JSON                           |
 | `--time`           | Show timing information                  |
 
+### Output Contract
+
+For budgeted commands with `--out`, ContextSmith writes:
+
+- main bundle to the requested output path,
+- sibling manifest at `<stem>.manifest.json`,
+- non-essential status lines to stderr (for example `ok: manifest written ...` and command summaries like `diff:`, `collect:`, `pack:`).
+
+`--quiet` suppresses these non-essential stderr status lines.
+
 ## Configuration
 
 Running `contextsmith init` creates a `contextsmith.toml` with sensible defaults:
