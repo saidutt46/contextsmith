@@ -9,10 +9,12 @@ use std::path::PathBuf;
 use colored::Colorize;
 
 use crate::cli::OutputFormat;
+use crate::config::Config;
 use crate::error::{ContextSmithError, Result};
-use crate::manifest::{self, ManifestEntry};
-use crate::output::{self, Bundle, BundleSection, Format, FormatOptions};
+use crate::manifest::{self, ManifestEntry, WeightsUsed};
+use crate::output::{self, Bundle, BundleSection, FormatOptions};
 use crate::tokens::{self, TokenEstimator};
+use crate::utils;
 
 // ---------------------------------------------------------------------------
 // Public interface
@@ -45,6 +47,8 @@ pub struct PackCommandOptions {
     pub out: Option<PathBuf>,
     /// Suppress non-essential output.
     pub quiet: bool,
+    /// Path to config file.
+    pub config_path: Option<std::path::PathBuf>,
 }
 
 /// Run the pack command end-to-end.
@@ -52,6 +56,7 @@ pub fn run(options: PackCommandOptions) -> Result<()> {
     // Step 1: Read input bundle.
     let bundle_path = options
         .bundle
+        .clone()
         .ok_or_else(|| ContextSmithError::validation("bundle", "input bundle file is required"))?;
 
     let content = std::fs::read_to_string(&bundle_path).map_err(|e| {
@@ -123,7 +128,7 @@ pub fn run(options: PackCommandOptions) -> Result<()> {
     };
 
     // Step 6: Format and write.
-    let format = cli_format_to_output_format(&options.format);
+    let format = utils::cli_format_to_output_format(&options.format);
     let formatted = output::format_bundle(&output_bundle, format)?;
     output::write_output(
         &formatted,
@@ -136,13 +141,22 @@ pub fn run(options: PackCommandOptions) -> Result<()> {
 
     // Step 7: Write manifest alongside output.
     if let Some(ref out_path) = options.out {
-        let m = manifest::build_manifest(
+        let config = load_config(&options)?;
+        let weights = &config.ranking_weights;
+        let mut m = manifest::build_manifest(
             entries.clone(),
             estimator.model_name(),
             options.budget,
             reserve,
         );
-        let manifest_path = manifest_sibling_path(out_path);
+        m.summary.weights_used = Some(WeightsUsed {
+            text: weights.text,
+            diff: weights.diff,
+            recency: weights.recency,
+            proximity: weights.proximity,
+            test: weights.test,
+        });
+        let manifest_path = utils::manifest_sibling_path(out_path);
         manifest::write_manifest(&m, &manifest_path)?;
         if !options.quiet {
             eprintln!(
@@ -256,24 +270,13 @@ fn make_entry(
     }
 }
 
-/// Map the clap [`OutputFormat`] to the library [`Format`].
-fn cli_format_to_output_format(fmt: &OutputFormat) -> Format {
-    match fmt {
-        OutputFormat::Markdown => Format::Markdown,
-        OutputFormat::Json => Format::Json,
-        OutputFormat::Plain => Format::Plain,
-        OutputFormat::Xml => Format::Xml,
+/// Load config from explicit path or discovery.
+fn load_config(options: &PackCommandOptions) -> Result<Config> {
+    let config_path = crate::config::find_config_file(options.config_path.as_deref());
+    match config_path {
+        Some(p) => Config::load(&p),
+        None => Ok(Config::default()),
     }
-}
-
-/// Compute the manifest sibling path for a given output file.
-fn manifest_sibling_path(out_path: &std::path::Path) -> std::path::PathBuf {
-    let stem = out_path
-        .file_stem()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_else(|| "output".to_string());
-    let parent = out_path.parent().unwrap_or(std::path::Path::new("."));
-    parent.join(format!("{stem}.manifest.json"))
 }
 
 // ---------------------------------------------------------------------------

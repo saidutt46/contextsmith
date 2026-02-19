@@ -72,9 +72,9 @@ fn help_shows_all_commands() {
 
 #[test]
 fn unimplemented_command_shows_error() {
-    // `collect` is still stubbed — verify it reports not-implemented.
+    // `trim` is still stubbed — verify it reports not-implemented.
     cmd()
-        .arg("collect")
+        .arg("trim")
         .assert()
         .failure()
         .stderr(predicate::str::contains("not yet implemented"));
@@ -497,8 +497,10 @@ fn explain_show_weights() {
         .args(["explain", manifest_path.to_str().unwrap(), "--show-weights"])
         .assert()
         .success()
-        // Should show "No ranking weights" since diff uses order-based selection.
-        .stdout(predicate::str::contains("No ranking weights"));
+        // Should show actual ranking weights now that diff populates weights_used.
+        .stdout(predicate::str::contains("Ranking weights:"))
+        .stdout(predicate::str::contains("text:"))
+        .stdout(predicate::str::contains("diff:"));
 }
 
 #[test]
@@ -528,4 +530,308 @@ fn explain_directory_with_manifest() {
         .assert()
         .success()
         .stdout(predicate::str::contains("summary:"));
+}
+
+// -----------------------------------------------------------------------
+// Collect command tests
+// -----------------------------------------------------------------------
+
+#[test]
+fn collect_no_mode_shows_error() {
+    let dir = setup_git_repo();
+    cmd()
+        .args(["collect", "--root", dir.path().to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "<query>, --files, --grep, or --symbol",
+        ));
+}
+
+#[test]
+fn collect_files_reads_file() {
+    let dir = setup_git_repo();
+    cmd()
+        .args([
+            "collect",
+            "--files",
+            "hello.rs",
+            "--root",
+            dir.path().to_str().unwrap(),
+            "--stdout",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("hello, world!"));
+}
+
+#[test]
+fn collect_files_json_format() {
+    let dir = setup_git_repo();
+    let output = cmd()
+        .args([
+            "collect",
+            "--files",
+            "hello.rs",
+            "--root",
+            dir.path().to_str().unwrap(),
+            "--format",
+            "json",
+            "--stdout",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let parsed: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(parsed["sections"].is_array());
+    assert!(!parsed["sections"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn collect_files_missing_file_errors() {
+    let dir = setup_git_repo();
+    cmd()
+        .args([
+            "collect",
+            "--files",
+            "nonexistent.rs",
+            "--root",
+            dir.path().to_str().unwrap(),
+            "--stdout",
+        ])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn collect_grep_finds_matches() {
+    let dir = setup_git_repo();
+    cmd()
+        .args([
+            "collect",
+            "--grep",
+            "println",
+            "--root",
+            dir.path().to_str().unwrap(),
+            "--stdout",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("println"));
+}
+
+#[test]
+fn collect_grep_no_matches_shows_message() {
+    let dir = setup_git_repo();
+    cmd()
+        .args([
+            "collect",
+            "--grep",
+            "XYZNONEXISTENT999",
+            "--root",
+            dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No matching"));
+}
+
+#[test]
+fn collect_files_with_budget() {
+    let dir = setup_git_repo();
+    cmd()
+        .args([
+            "collect",
+            "--files",
+            "hello.rs",
+            "--root",
+            dir.path().to_str().unwrap(),
+            "--budget",
+            "5000",
+            "--stdout",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("hello"));
+}
+
+#[test]
+fn collect_files_output_creates_manifest() {
+    let dir = setup_git_repo();
+    let out_path = dir.path().join("collected.md");
+
+    cmd()
+        .args([
+            "collect",
+            "--files",
+            "hello.rs",
+            "--root",
+            dir.path().to_str().unwrap(),
+            "--budget",
+            "5000",
+            "--out",
+            out_path.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    assert!(out_path.exists());
+    let manifest_path = dir.path().join("collected.manifest.json");
+    assert!(
+        manifest_path.exists(),
+        "manifest should be created alongside output"
+    );
+}
+
+#[test]
+fn collect_symbol_finds_definitions() {
+    let dir = setup_git_repo();
+    cmd()
+        .args([
+            "collect",
+            "--symbol",
+            "main",
+            "--root",
+            dir.path().to_str().unwrap(),
+            "--stdout",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("main"));
+}
+
+#[test]
+fn collect_symbol_no_matches_shows_message() {
+    let dir = setup_git_repo();
+    cmd()
+        .args([
+            "collect",
+            "--symbol",
+            "NONEXISTENT_SYMBOL_XYZ",
+            "--root",
+            dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No matching"));
+}
+
+#[test]
+fn collect_grep_with_lang_filter() {
+    let dir = setup_git_repo();
+    // Add a Python file alongside the Rust file.
+    std::fs::write(
+        dir.path().join("script.py"),
+        "def main():\n    print('hello')\n",
+    )
+    .unwrap();
+
+    cmd()
+        .args([
+            "collect",
+            "--grep",
+            "main",
+            "--lang",
+            "rust",
+            "--root",
+            dir.path().to_str().unwrap(),
+            "--stdout",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("main"));
+}
+
+#[test]
+fn collect_positional_query_acts_as_grep() {
+    let dir = setup_git_repo();
+    cmd()
+        .args([
+            "collect",
+            "hello",
+            "--root",
+            dir.path().to_str().unwrap(),
+            "--stdout",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("hello"));
+}
+
+#[test]
+fn collect_explicit_grep_overrides_query() {
+    let dir = setup_git_repo();
+    // Positional query is "nonexistent", but --grep "hello" should take precedence.
+    cmd()
+        .args([
+            "collect",
+            "nonexistent_xyz",
+            "--grep",
+            "hello",
+            "--root",
+            dir.path().to_str().unwrap(),
+            "--stdout",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("hello"));
+}
+
+// -----------------------------------------------------------------------
+// Stats command tests
+// -----------------------------------------------------------------------
+
+#[test]
+fn stats_repo_scan_shows_file_count() {
+    let dir = setup_git_repo();
+    cmd()
+        .args(["stats", "--root", dir.path().to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("files:"));
+}
+
+#[test]
+fn stats_repo_scan_with_tokens() {
+    let dir = setup_git_repo();
+    cmd()
+        .args(["stats", "--root", dir.path().to_str().unwrap(), "--tokens"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("total tokens:"));
+}
+
+#[test]
+fn stats_repo_scan_by_lang() {
+    let dir = setup_git_repo();
+    cmd()
+        .args(["stats", "--root", dir.path().to_str().unwrap(), "--by-lang"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("By language:"));
+}
+
+#[test]
+fn stats_bundle_mode_reads_manifest() {
+    let dir = setup_git_repo();
+    let manifest_path = create_manifest(&dir);
+
+    cmd()
+        .args(["stats", manifest_path.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("total tokens:"));
+}
+
+#[test]
+fn stats_bundle_mode_top_files() {
+    let dir = setup_git_repo();
+    let manifest_path = create_manifest(&dir);
+
+    cmd()
+        .args(["stats", manifest_path.to_str().unwrap(), "--top-files", "5"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Top 5 files"));
 }

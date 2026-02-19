@@ -6,10 +6,12 @@ use colored::Colorize;
 
 use contextsmith::cli::{Cli, ColorMode, Command};
 use contextsmith::commands;
+use contextsmith::commands::collect::CollectCommandOptions;
 use contextsmith::commands::diff::DiffCommandOptions;
 use contextsmith::commands::explain::ExplainCommandOptions;
 use contextsmith::commands::init::{InitOptions, InitResult};
 use contextsmith::commands::pack::PackCommandOptions;
+use contextsmith::commands::stats::StatsCommandOptions;
 use contextsmith::error::ContextSmithError;
 
 fn main() {
@@ -90,9 +92,46 @@ fn run(cli: Cli) -> Result<(), ContextSmithError> {
                 quiet: cli.quiet,
                 budget,
                 model: None,
+                config_path: cli.config,
             })
         }
-        Command::Collect { .. } => commands::not_implemented("collect"),
+        Command::Collect {
+            query,
+            files,
+            grep,
+            symbol,
+            exclude,
+            lang,
+            path,
+            max_files,
+            format,
+            out,
+            stdout,
+            budget,
+            ..
+        } => {
+            let root = resolve_root(cli.root)?;
+            // Treat positional query as implicit --grep when no explicit mode is set.
+            let effective_grep = grep.or(query);
+            commands::collect::run(CollectCommandOptions {
+                root,
+                files,
+                grep: effective_grep,
+                symbol,
+                exclude,
+                lang,
+                path,
+                context_lines: 3,
+                max_files,
+                format,
+                out,
+                stdout,
+                quiet: cli.quiet,
+                budget,
+                model: None,
+                config_path: cli.config,
+            })
+        }
         Command::Pack {
             bundle,
             budget,
@@ -118,10 +157,29 @@ fn run(cli: Cli) -> Result<(), ContextSmithError> {
             stdout,
             out,
             quiet: cli.quiet,
+            config_path: cli.config,
         }),
         Command::Trim { .. } => commands::not_implemented("trim"),
         Command::Map { .. } => commands::not_implemented("map"),
-        Command::Stats { .. } => commands::not_implemented("stats"),
+        Command::Stats {
+            bundle,
+            top_files,
+            by_lang,
+            by_type,
+            tokens,
+        } => {
+            let root = resolve_root(cli.root)?;
+            commands::stats::run(StatsCommandOptions {
+                bundle,
+                root,
+                top_files,
+                by_lang,
+                by_type,
+                tokens,
+                quiet: cli.quiet,
+                config_path: cli.config,
+            })
+        }
         Command::Explain {
             bundle,
             detailed,

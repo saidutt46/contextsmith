@@ -10,12 +10,15 @@ use colored::Colorize;
 use tracing::warn;
 
 use crate::cli::OutputFormat;
+use crate::config::Config;
 use crate::error::Result;
 use crate::git::{self, DiffOptions, FileStatus};
-use crate::manifest::{self, ManifestEntry};
-use crate::output::{self, Bundle, BundleSection, Format, FormatOptions};
+use crate::manifest::{self, ManifestEntry, WeightsUsed};
+use crate::output::{self, Bundle, BundleSection, FormatOptions};
+use crate::ranker;
 use crate::slicer::{self, SliceOptions, Snippet};
 use crate::tokens::{self, TokenEstimator};
+use crate::utils;
 
 // ---------------------------------------------------------------------------
 // Public interface
@@ -52,6 +55,8 @@ pub struct DiffCommandOptions {
     pub budget: Option<usize>,
     /// Model name for token estimation.
     pub model: Option<String>,
+    /// Path to config file.
+    pub config_path: Option<PathBuf>,
 }
 
 /// Run the diff command end-to-end.
@@ -61,7 +66,10 @@ pub fn run(options: DiffCommandOptions) -> Result<()> {
         warn!("--include-related is not yet implemented; ignoring");
     }
 
-    // Step 1: Get parsed diff from git.
+    // Step 1: Load config for ranking weights.
+    let config = load_config(&options)?;
+
+    // Step 2: Get parsed diff from git.
     let diff_files = git::get_diff(&DiffOptions {
         root: options.root.clone(),
         rev_range: options.rev_range,
@@ -77,7 +85,7 @@ pub fn run(options: DiffCommandOptions) -> Result<()> {
         return Ok(());
     }
 
-    // Step 2: Slice context around hunks.
+    // Step 3: Slice context around hunks.
     let snippets = slicer::slice_diff_hunks(
         &diff_files,
         &SliceOptions {
@@ -86,8 +94,9 @@ pub fn run(options: DiffCommandOptions) -> Result<()> {
             root: options.root,
         },
     )?;
+    let weights = &config.ranking_weights;
 
-    // Step 3: Apply budget if set.
+    // Step 4: Apply budget if set.
     let model = options
         .model
         .as_deref()
@@ -96,13 +105,13 @@ pub fn run(options: DiffCommandOptions) -> Result<()> {
     let estimator = tokens::CharEstimator::new(model);
 
     let (included_snippets, manifest_entries) =
-        apply_budget_and_build_entries(&snippets, &estimator, options.budget);
+        apply_budget_and_build_entries(&snippets, &estimator, options.budget, weights);
 
-    // Step 4: Build a bundle from included snippets.
+    // Step 5: Build a bundle from included snippets.
     let bundle = build_bundle(&diff_files, included_snippets);
 
-    // Step 5: Format and write output.
-    let format = cli_format_to_output_format(&options.format);
+    // Step 6: Format and write output.
+    let format = utils::cli_format_to_output_format(&options.format);
     let formatted = output::format_bundle(&bundle, format)?;
     output::write_output(
         &formatted,
@@ -113,12 +122,19 @@ pub fn run(options: DiffCommandOptions) -> Result<()> {
         },
     )?;
 
-    // Step 6: Write manifest as sibling file when --out is specified.
+    // Step 7: Write manifest as sibling file when --out is specified.
     if let Some(ref out_path) = options.out {
-        let manifest =
+        let mut m =
             manifest::build_manifest(manifest_entries, estimator.model_name(), options.budget, 0);
-        let manifest_path = manifest_sibling_path(out_path);
-        manifest::write_manifest(&manifest, &manifest_path)?;
+        m.summary.weights_used = Some(WeightsUsed {
+            text: weights.text,
+            diff: weights.diff,
+            recency: weights.recency,
+            proximity: weights.proximity,
+            test: weights.test,
+        });
+        let manifest_path = utils::manifest_sibling_path(out_path);
+        manifest::write_manifest(&m, &manifest_path)?;
         if !options.quiet {
             eprintln!(
                 "{} manifest written to {}",
@@ -128,7 +144,7 @@ pub fn run(options: DiffCommandOptions) -> Result<()> {
         }
     }
 
-    // Step 7: Print summary to stderr (unless writing to stdout or quiet).
+    // Step 8: Print summary to stderr (unless writing to stdout or quiet).
     if !options.quiet && !options.stdout {
         let total_tokens: usize = manifest_entries_total_tokens(&snippets, &estimator);
         print_summary(&diff_files, total_tokens, options.budget);
@@ -150,19 +166,43 @@ fn apply_budget_and_build_entries(
     snippets: &[Snippet],
     estimator: &dyn tokens::TokenEstimator,
     budget: Option<usize>,
+    weights: &crate::config::RankingWeights,
 ) -> (Vec<Snippet>, Vec<ManifestEntry>) {
+    // Build sections for ranking.
+    let sections: Vec<BundleSection> = snippets
+        .iter()
+        .map(|s| BundleSection {
+            file_path: s.file_path.clone(),
+            language: utils::infer_language(&s.file_path),
+            content: s.content.clone(),
+            reason: s.reason.clone(),
+        })
+        .collect();
+
+    // Each diff snippet gets a match count of 1 (uniform diff signal).
+    let match_counts: Vec<usize> = vec![1; snippets.len()];
+    let scored = ranker::rank_snippets(&sections, &match_counts, weights);
+
     let mut included = Vec::new();
     let mut entries = Vec::new();
     let mut tokens_used: usize = 0;
 
-    for (i, snippet) in snippets.iter().enumerate() {
-        let token_est = estimator.estimate(&snippet.content);
-        let char_count = snippet.content.len();
+    for (idx, scored_snippet) in scored.iter().enumerate() {
+        // Find the original snippet for start/end line info.
+        let original = snippets
+            .iter()
+            .find(|s| {
+                s.file_path == scored_snippet.section.file_path
+                    && s.content == scored_snippet.section.content
+            })
+            .unwrap_or(&snippets[idx.min(snippets.len() - 1)]);
+
+        let token_est = estimator.estimate(&scored_snippet.section.content);
+        let char_count = scored_snippet.section.content.len();
 
         let is_included = match budget {
             None => true,
             Some(b) => {
-                // Always include at least one snippet.
                 if included.is_empty() {
                     true
                 } else {
@@ -173,19 +213,19 @@ fn apply_budget_and_build_entries(
 
         if is_included {
             tokens_used += token_est;
-            included.push(snippet.clone());
+            included.push(original.clone());
         }
 
         entries.push(ManifestEntry {
-            file_path: snippet.file_path.clone(),
-            start_line: snippet.start_line,
-            end_line: snippet.end_line,
+            file_path: scored_snippet.section.file_path.clone(),
+            start_line: original.start_line,
+            end_line: original.end_line,
             token_estimate: token_est,
             char_count,
-            reason: snippet.reason.clone(),
-            score: (snippets.len() - i) as f64, // order-based score
+            reason: scored_snippet.section.reason.clone(),
+            score: scored_snippet.score,
             included: is_included,
-            language: infer_language(&snippet.file_path),
+            language: scored_snippet.section.language.clone(),
         });
     }
 
@@ -203,18 +243,6 @@ fn manifest_entries_total_tokens(
         .sum()
 }
 
-/// Compute the manifest sibling path for a given output file.
-///
-/// `output.md` → `output.manifest.json`
-fn manifest_sibling_path(out_path: &std::path::Path) -> std::path::PathBuf {
-    let stem = out_path
-        .file_stem()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_else(|| "output".to_string());
-    let parent = out_path.parent().unwrap_or(std::path::Path::new("."));
-    parent.join(format!("{stem}.manifest.json"))
-}
-
 /// Build an output [`Bundle`] from diff files and extracted snippets.
 fn build_bundle(diff_files: &[git::DiffFile], snippets: Vec<Snippet>) -> Bundle {
     let file_count = diff_files.len();
@@ -223,7 +251,7 @@ fn build_bundle(diff_files: &[git::DiffFile], snippets: Vec<Snippet>) -> Bundle 
     let sections: Vec<BundleSection> = snippets
         .into_iter()
         .map(|s| BundleSection {
-            language: infer_language(&s.file_path),
+            language: utils::infer_language(&s.file_path),
             file_path: s.file_path,
             content: s.content,
             reason: s.reason,
@@ -244,69 +272,12 @@ fn build_bundle(diff_files: &[git::DiffFile], snippets: Vec<Snippet>) -> Bundle 
     }
 }
 
-/// Infer a syntax-highlighting language identifier from a file path.
-///
-/// Checks the file extension first, then falls back to well-known
-/// filenames (e.g. `Dockerfile`, `.gitignore`).
-fn infer_language(path: &str) -> String {
-    // Try extension first.
-    let ext = path.rsplit('.').next().unwrap_or("");
-    let from_ext = match ext {
-        "rs" => "rust",
-        "ts" | "tsx" => "typescript",
-        "js" | "jsx" => "javascript",
-        "py" => "python",
-        "go" => "go",
-        "rb" => "ruby",
-        "java" => "java",
-        "c" | "h" => "c",
-        "cpp" | "cc" | "cxx" | "hpp" => "cpp",
-        "swift" => "swift",
-        "kt" | "kts" => "kotlin",
-        "sh" | "bash" | "zsh" => "bash",
-        "md" => "markdown",
-        "toml" => "toml",
-        "yaml" | "yml" => "yaml",
-        "json" => "json",
-        "xml" => "xml",
-        "html" | "htm" => "html",
-        "css" => "css",
-        "sql" => "sql",
-        "graphql" | "gql" => "graphql",
-        "proto" => "protobuf",
-        "tf" => "hcl",
-        "lock" => "toml",
-        _ => "",
-    };
-
-    if !from_ext.is_empty() {
-        return from_ext.to_string();
-    }
-
-    // Fall back to well-known filenames.
-    let filename = path.rsplit('/').next().unwrap_or(path);
-    match filename {
-        "Dockerfile" | "Containerfile" => "dockerfile",
-        "Makefile" | "GNUmakefile" => "makefile",
-        "Justfile" | "justfile" => "makefile",
-        "CMakeLists.txt" => "cmake",
-        ".gitignore" | ".dockerignore" | ".prettierignore" | ".eslintignore" => "gitignore",
-        ".env" | ".env.local" | ".env.example" => "dotenv",
-        "Gemfile" => "ruby",
-        "Rakefile" => "ruby",
-        "Vagrantfile" => "ruby",
-        _ => "",
-    }
-    .to_string()
-}
-
-/// Map the clap [`OutputFormat`] to the library [`Format`].
-fn cli_format_to_output_format(fmt: &OutputFormat) -> Format {
-    match fmt {
-        OutputFormat::Markdown => Format::Markdown,
-        OutputFormat::Json => Format::Json,
-        OutputFormat::Plain => Format::Plain,
-        OutputFormat::Xml => Format::Xml,
+/// Load config from explicit path or discovery.
+fn load_config(options: &DiffCommandOptions) -> Result<Config> {
+    let config_path = crate::config::find_config_file(options.config_path.as_deref());
+    match config_path {
+        Some(p) => Config::load(&p),
+        None => Ok(Config::default()),
     }
 }
 
