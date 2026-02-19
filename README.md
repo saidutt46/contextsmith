@@ -263,6 +263,20 @@ For budgeted commands with `--out`, ContextSmith writes:
 
 `--quiet` suppresses these non-essential stderr status lines.
 
+Quick acceptance checklist:
+
+```bash
+# Manifest + summary on stderr for --out
+contextsmith diff --root . --budget 500 --out /tmp/ctx.md
+contextsmith collect --files src/main.rs --root . --budget 500 --out /tmp/collect.md
+contextsmith pack /tmp/bundle.json --budget 500 --out /tmp/pack.md
+
+# Quiet suppresses non-essential stderr status lines
+contextsmith diff --root . --budget 500 --quiet --out /tmp/ctx-quiet.md
+contextsmith collect --files src/main.rs --root . --budget 500 --quiet --out /tmp/collect-quiet.md
+contextsmith pack /tmp/bundle.json --budget 500 --quiet --out /tmp/pack-quiet.md
+```
+
 ## Configuration
 
 Running `contextsmith init` creates a `contextsmith.toml` with sensible defaults:

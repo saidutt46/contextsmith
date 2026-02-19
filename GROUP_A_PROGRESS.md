@@ -29,6 +29,8 @@ Focus: Group A (cleanup + reliability), with user-facing doc alignment and outpu
   - unit tests:
     - `sort_entries_for_display_is_deterministic_on_ties`
     - `sort_entries_for_display_prefers_higher_score`
+- Updated `README.md` output contract section with a quick acceptance checklist
+  for manifest/summary emission and quiet-mode suppression behavior.
 
 ## Measurable Verification
 
@@ -61,6 +63,5 @@ Observed test totals:
 - Internal `test-docs/` remains intentionally untouched per instruction.
 
 ## Next Group A Steps
-1. Add a focused acceptance checklist for command output/error contracts in tracked docs.
-2. Evaluate whether `collect` should expose currently-ignored flags or hide them until wired.
-3. Prepare Group A PR with scoped changes and measurable outputs.
+1. Evaluate whether `collect` should expose currently-ignored flags or hide them until wired.
+2. Prepare Group A PR with scoped changes and measurable outputs.
