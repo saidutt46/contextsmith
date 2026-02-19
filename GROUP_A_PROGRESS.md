@@ -24,6 +24,11 @@ Focus: Group A (cleanup + reliability), with user-facing doc alignment and outpu
   - `pack_without_bundle_reports_validation_field`
   - strengthened `pack_missing_bundle_errors` with path-context assertions
   - strengthened `explain_missing_file_errors` with path-context assertions
+- Hardened explain output determinism in `src/commands/explain.rs`:
+  - deterministic tie-break ordering for equal-score entries
+  - unit tests:
+    - `sort_entries_for_display_is_deterministic_on_ties`
+    - `sort_entries_for_display_prefers_higher_score`
 
 ## Measurable Verification
 
@@ -46,16 +51,16 @@ cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 Result: PASS
 
 Observed test totals:
-- Unit tests: `105 passed`
+- Unit tests: `107 passed`
 - Integration tests: `51 passed` (was 44 baseline; +7 contract/quiet/error tests)
 - Doctests: `1 passed`
-- Total: `157 passed`, `0 failed`
+- Total: `159 passed`, `0 failed`
 
 ## Current Status
 - Group A A3 has concrete coverage for user-visible output contract and `--quiet` semantics.
 - Internal `test-docs/` remains intentionally untouched per instruction.
 
 ## Next Group A Steps
-1. Add deterministic ordering assertions for explain output ties (if missing in integration coverage).
-2. Add a focused acceptance checklist for command output/error contracts in tracked docs.
+1. Add a focused acceptance checklist for command output/error contracts in tracked docs.
+2. Evaluate whether `collect` should expose currently-ignored flags or hide them until wired.
 3. Prepare Group A PR with scoped changes and measurable outputs.
