@@ -59,6 +59,8 @@ pub struct CollectCommandOptions {
     pub model: Option<String>,
     /// Path to config file.
     pub config_path: Option<PathBuf>,
+    /// Accepted CLI flags that were provided but are not currently wired.
+    pub ignored_flags_used: Vec<String>,
 }
 
 /// Collect mode — at least one must be specified.
@@ -71,6 +73,13 @@ enum CollectMode {
 
 /// Run the collect command.
 pub fn run(options: CollectCommandOptions) -> Result<()> {
+    if !options.ignored_flags_used.is_empty() && !options.quiet {
+        eprintln!(
+            "warn: collect currently ignores {}",
+            options.ignored_flags_used.join(", ")
+        );
+    }
+
     // Step 1: Validate that at least one mode is specified.
     let mode = validate_mode(&options)?;
 
@@ -564,6 +573,7 @@ mod tests {
             budget: None,
             model: None,
             config_path: None,
+            ignored_flags_used: vec![],
         };
         assert!(validate_mode(&options).is_err());
     }
@@ -587,6 +597,7 @@ mod tests {
             budget: None,
             model: None,
             config_path: None,
+            ignored_flags_used: vec![],
         };
         assert!(matches!(
             validate_mode(&options).unwrap(),
@@ -613,6 +624,7 @@ mod tests {
             budget: None,
             model: None,
             config_path: None,
+            ignored_flags_used: vec![],
         };
         assert!(matches!(
             validate_mode(&options).unwrap(),

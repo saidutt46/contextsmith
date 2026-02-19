@@ -31,6 +31,12 @@ Focus: Group A (cleanup + reliability), with user-facing doc alignment and outpu
     - `sort_entries_for_display_prefers_higher_score`
 - Updated `README.md` output contract section with a quick acceptance checklist
   for manifest/summary emission and quiet-mode suppression behavior.
+- Implemented explicit runtime warnings for currently-ignored `collect` flags:
+  - warning format: `warn: collect currently ignores ...`
+  - warning suppressed by `--quiet`
+  - integration tests:
+    - `collect_warns_when_ignored_flags_are_used`
+    - `collect_quiet_suppresses_ignored_flag_warning`
 
 ## Measurable Verification
 
@@ -54,9 +60,9 @@ Result: PASS
 
 Observed test totals:
 - Unit tests: `107 passed`
-- Integration tests: `51 passed` (was 44 baseline; +7 contract/quiet/error tests)
+- Integration tests: `53 passed` (was 44 baseline; +9 contract/quiet/error/warning tests)
 - Doctests: `1 passed`
-- Total: `159 passed`, `0 failed`
+- Total: `161 passed`, `0 failed`
 
 ## Current Status
 - Group A A3 has concrete coverage for user-visible output contract and `--quiet` semantics.

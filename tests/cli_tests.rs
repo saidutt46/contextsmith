@@ -925,6 +925,49 @@ fn collect_explicit_grep_overrides_query() {
         .stdout(predicate::str::contains("hello"));
 }
 
+#[test]
+fn collect_warns_when_ignored_flags_are_used() {
+    let dir = setup_git_repo();
+    cmd()
+        .args([
+            "collect",
+            "--grep",
+            "hello",
+            "--scope",
+            "src",
+            "--rank",
+            "hybrid",
+            "--root",
+            dir.path().to_str().unwrap(),
+            "--stdout",
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains(
+            "warn: collect currently ignores --scope, --rank",
+        ));
+}
+
+#[test]
+fn collect_quiet_suppresses_ignored_flag_warning() {
+    let dir = setup_git_repo();
+    cmd()
+        .args([
+            "collect",
+            "--grep",
+            "hello",
+            "--scope",
+            "src",
+            "--root",
+            dir.path().to_str().unwrap(),
+            "--stdout",
+            "--quiet",
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
+}
+
 // -----------------------------------------------------------------------
 // Stats command tests
 // -----------------------------------------------------------------------
