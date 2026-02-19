@@ -20,6 +20,10 @@ Focus: Group A (cleanup + reliability), with user-facing doc alignment and outpu
   - `diff_quiet_suppresses_non_essential_stderr`
   - `collect_quiet_suppresses_non_essential_stderr`
   - `pack_quiet_suppresses_non_essential_stderr`
+- Added error-contract consistency tests in `tests/cli_tests.rs`:
+  - `pack_without_bundle_reports_validation_field`
+  - strengthened `pack_missing_bundle_errors` with path-context assertions
+  - strengthened `explain_missing_file_errors` with path-context assertions
 
 ## Measurable Verification
 
@@ -43,15 +47,15 @@ Result: PASS
 
 Observed test totals:
 - Unit tests: `105 passed`
-- Integration tests: `50 passed` (was 44 baseline; +6 contract/quiet tests)
+- Integration tests: `51 passed` (was 44 baseline; +7 contract/quiet/error tests)
 - Doctests: `1 passed`
-- Total: `156 passed`, `0 failed`
+- Total: `157 passed`, `0 failed`
 
 ## Current Status
 - Group A A3 has concrete coverage for user-visible output contract and `--quiet` semantics.
 - Internal `test-docs/` remains intentionally untouched per instruction.
 
 ## Next Group A Steps
-1. Add focused checks for error message consistency (validation field naming and path-context format).
-2. Add deterministic ordering assertions for explain output ties (if missing in integration coverage).
+1. Add deterministic ordering assertions for explain output ties (if missing in integration coverage).
+2. Add a focused acceptance checklist for command output/error contracts in tracked docs.
 3. Prepare Group A PR with scoped changes and measurable outputs.

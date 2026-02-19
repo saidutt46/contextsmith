@@ -524,7 +524,19 @@ fn pack_missing_bundle_errors() {
     cmd()
         .args(["pack", "/tmp/nonexistent_bundle.json", "--stdout"])
         .assert()
-        .failure();
+        .failure()
+        .stderr(predicate::str::contains("I/O error: reading bundle"))
+        .stderr(predicate::str::contains("/tmp/nonexistent_bundle.json"));
+}
+
+#[test]
+fn pack_without_bundle_reports_validation_field() {
+    cmd()
+        .args(["pack", "--stdout"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("validation error on 'bundle'"))
+        .stderr(predicate::str::contains("input bundle file is required"));
 }
 
 // -----------------------------------------------------------------------
@@ -594,7 +606,9 @@ fn explain_missing_file_errors() {
     cmd()
         .args(["explain", "/tmp/nonexistent_manifest.json"])
         .assert()
-        .failure();
+        .failure()
+        .stderr(predicate::str::contains("I/O error: reading manifest"))
+        .stderr(predicate::str::contains("/tmp/nonexistent_manifest.json"));
 }
 
 #[test]
