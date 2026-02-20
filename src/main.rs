@@ -97,12 +97,21 @@ fn run(cli: Cli) -> Result<(), ContextSmithError> {
         }
         Command::Collect {
             query,
+            scope,
             files,
             grep,
             symbol,
             exclude,
             lang,
             path,
+            diff,
+            span,
+            max_snippets,
+            include_defs,
+            include_refs,
+            include_imports,
+            tests,
+            rank,
             max_files,
             format,
             out,
@@ -113,6 +122,34 @@ fn run(cli: Cli) -> Result<(), ContextSmithError> {
             let root = resolve_root(cli.root)?;
             // Treat positional query as implicit --grep when no explicit mode is set.
             let effective_grep = grep.or(query);
+            let mut ignored_flags_used = Vec::new();
+            if scope.is_some() {
+                ignored_flags_used.push("--scope".to_string());
+            }
+            if diff.is_some() {
+                ignored_flags_used.push("--diff".to_string());
+            }
+            if span.is_some() {
+                ignored_flags_used.push("--span".to_string());
+            }
+            if max_snippets.is_some() {
+                ignored_flags_used.push("--max-snippets".to_string());
+            }
+            if include_defs {
+                ignored_flags_used.push("--include-defs".to_string());
+            }
+            if include_refs {
+                ignored_flags_used.push("--include-refs".to_string());
+            }
+            if include_imports {
+                ignored_flags_used.push("--include-imports".to_string());
+            }
+            if tests {
+                ignored_flags_used.push("--tests".to_string());
+            }
+            if rank.is_some() {
+                ignored_flags_used.push("--rank".to_string());
+            }
             commands::collect::run(CollectCommandOptions {
                 root,
                 files,
@@ -130,6 +167,7 @@ fn run(cli: Cli) -> Result<(), ContextSmithError> {
                 budget,
                 model: None,
                 config_path: cli.config,
+                ignored_flags_used,
             })
         }
         Command::Pack {

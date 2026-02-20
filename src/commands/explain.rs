@@ -4,6 +4,7 @@
 //! of what was included/excluded and why. Useful for debugging budget
 //! decisions and understanding context assembly.
 
+use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
 
 use colored::Colorize;
@@ -43,11 +44,7 @@ pub fn run(options: ExplainCommandOptions) -> Result<()> {
 
     // Step 3: Sort entries by score descending.
     let mut entries = manifest.entries.clone();
-    entries.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    sort_entries_for_display(&mut entries);
 
     // Limit to top N if requested.
     if let Some(top) = options.top {
@@ -115,6 +112,25 @@ pub fn run(options: ExplainCommandOptions) -> Result<()> {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Sort entries for deterministic explain output.
+///
+/// Primary key is score descending. Ties are broken by file path,
+/// start/end line, reason, token estimate, and language so repeated runs
+/// produce identical output ordering.
+fn sort_entries_for_display(entries: &mut [crate::manifest::ManifestEntry]) {
+    entries.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| a.file_path.cmp(&b.file_path))
+            .then_with(|| a.start_line.cmp(&b.start_line))
+            .then_with(|| a.end_line.cmp(&b.end_line))
+            .then_with(|| a.reason.cmp(&b.reason))
+            .then_with(|| a.token_estimate.cmp(&b.token_estimate))
+            .then_with(|| a.language.cmp(&b.language))
+    });
+}
+
 /// Resolve the manifest path from user input.
 ///
 /// - `Some(file.json)` → use directly
@@ -180,6 +196,7 @@ fn print_weights(manifest: &Manifest) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::manifest::ManifestEntry;
 
     #[test]
     fn resolve_manifest_path_with_file() {
@@ -205,5 +222,69 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let result = resolve_manifest_path(Some(dir.path()));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn sort_entries_for_display_is_deterministic_on_ties() {
+        let mut entries = vec![
+            ManifestEntry {
+                file_path: "b.rs".to_string(),
+                start_line: 10,
+                end_line: 20,
+                token_estimate: 5,
+                char_count: 20,
+                reason: "r".to_string(),
+                score: 1.0,
+                included: true,
+                language: "rust".to_string(),
+            },
+            ManifestEntry {
+                file_path: "a.rs".to_string(),
+                start_line: 10,
+                end_line: 20,
+                token_estimate: 5,
+                char_count: 20,
+                reason: "r".to_string(),
+                score: 1.0,
+                included: true,
+                language: "rust".to_string(),
+            },
+        ];
+
+        sort_entries_for_display(&mut entries);
+        assert_eq!(entries[0].file_path, "a.rs");
+        assert_eq!(entries[1].file_path, "b.rs");
+    }
+
+    #[test]
+    fn sort_entries_for_display_prefers_higher_score() {
+        let mut entries = vec![
+            ManifestEntry {
+                file_path: "a.rs".to_string(),
+                start_line: 1,
+                end_line: 1,
+                token_estimate: 1,
+                char_count: 1,
+                reason: "r".to_string(),
+                score: 0.1,
+                included: true,
+                language: "rust".to_string(),
+            },
+            ManifestEntry {
+                file_path: "z.rs".to_string(),
+                start_line: 1,
+                end_line: 1,
+                token_estimate: 1,
+                char_count: 1,
+                reason: "r".to_string(),
+                score: 0.9,
+                included: true,
+                language: "rust".to_string(),
+            },
+        ];
+
+        sort_entries_for_display(&mut entries);
+        assert_eq!(entries[0].score, 0.9);
+        assert_eq!(entries[0].file_path, "z.rs");
     }
 }

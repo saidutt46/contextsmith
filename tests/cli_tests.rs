@@ -337,6 +337,49 @@ fn diff_budget_creates_manifest_sibling() {
 }
 
 #[test]
+fn diff_out_prints_manifest_and_summary_to_stderr() {
+    let dir = setup_git_repo();
+    let out_file = dir.path().join("ctx.md");
+
+    cmd()
+        .args([
+            "diff",
+            "--root",
+            dir.path().to_str().unwrap(),
+            "--budget",
+            "5000",
+            "--out",
+            out_file.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("manifest written to"))
+        .stderr(predicate::str::contains("diff:"))
+        .stderr(predicate::str::contains("(budget: 5000)"));
+}
+
+#[test]
+fn diff_quiet_suppresses_non_essential_stderr() {
+    let dir = setup_git_repo();
+    let out_file = dir.path().join("ctx.md");
+
+    cmd()
+        .args([
+            "diff",
+            "--root",
+            dir.path().to_str().unwrap(),
+            "--budget",
+            "5000",
+            "--quiet",
+            "--out",
+            out_file.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
+}
+
+#[test]
 fn diff_small_budget_still_includes_one_snippet() {
     let dir = setup_git_repo();
     // Budget of 1 token — should still include at least one snippet.
@@ -434,11 +477,66 @@ fn pack_with_output_file_creates_manifest() {
 }
 
 #[test]
+fn pack_with_output_prints_manifest_and_summary_to_stderr() {
+    let dir = setup_git_repo();
+    let bundle_path = create_json_bundle(&dir);
+    let out_path = dir.path().join("packed.md");
+
+    cmd()
+        .args([
+            "pack",
+            bundle_path.to_str().unwrap(),
+            "--budget",
+            "5000",
+            "--out",
+            out_path.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("manifest written to"))
+        .stderr(predicate::str::contains("pack:"))
+        .stderr(predicate::str::contains("(budget: 5000)"));
+}
+
+#[test]
+fn pack_quiet_suppresses_non_essential_stderr() {
+    let dir = setup_git_repo();
+    let bundle_path = create_json_bundle(&dir);
+    let out_path = dir.path().join("packed.md");
+
+    cmd()
+        .args([
+            "pack",
+            bundle_path.to_str().unwrap(),
+            "--budget",
+            "5000",
+            "--quiet",
+            "--out",
+            out_path.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
+}
+
+#[test]
 fn pack_missing_bundle_errors() {
     cmd()
         .args(["pack", "/tmp/nonexistent_bundle.json", "--stdout"])
         .assert()
-        .failure();
+        .failure()
+        .stderr(predicate::str::contains("I/O error: reading bundle"))
+        .stderr(predicate::str::contains("/tmp/nonexistent_bundle.json"));
+}
+
+#[test]
+fn pack_without_bundle_reports_validation_field() {
+    cmd()
+        .args(["pack", "--stdout"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("validation error on 'bundle'"))
+        .stderr(predicate::str::contains("input bundle file is required"));
 }
 
 // -----------------------------------------------------------------------
@@ -508,7 +606,9 @@ fn explain_missing_file_errors() {
     cmd()
         .args(["explain", "/tmp/nonexistent_manifest.json"])
         .assert()
-        .failure();
+        .failure()
+        .stderr(predicate::str::contains("I/O error: reading manifest"))
+        .stderr(predicate::str::contains("/tmp/nonexistent_manifest.json"));
 }
 
 #[test]
@@ -685,6 +785,53 @@ fn collect_files_output_creates_manifest() {
 }
 
 #[test]
+fn collect_files_output_prints_manifest_and_summary_to_stderr() {
+    let dir = setup_git_repo();
+    let out_path = dir.path().join("collected.md");
+
+    cmd()
+        .args([
+            "collect",
+            "--files",
+            "hello.rs",
+            "--root",
+            dir.path().to_str().unwrap(),
+            "--budget",
+            "5000",
+            "--out",
+            out_path.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("manifest written to"))
+        .stderr(predicate::str::contains("collect:"))
+        .stderr(predicate::str::contains("(budget: 5000)"));
+}
+
+#[test]
+fn collect_quiet_suppresses_non_essential_stderr() {
+    let dir = setup_git_repo();
+    let out_path = dir.path().join("collected.md");
+
+    cmd()
+        .args([
+            "collect",
+            "--files",
+            "hello.rs",
+            "--root",
+            dir.path().to_str().unwrap(),
+            "--budget",
+            "5000",
+            "--quiet",
+            "--out",
+            out_path.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
+}
+
+#[test]
 fn collect_symbol_finds_definitions() {
     let dir = setup_git_repo();
     cmd()
@@ -776,6 +923,49 @@ fn collect_explicit_grep_overrides_query() {
         .assert()
         .success()
         .stdout(predicate::str::contains("hello"));
+}
+
+#[test]
+fn collect_warns_when_ignored_flags_are_used() {
+    let dir = setup_git_repo();
+    cmd()
+        .args([
+            "collect",
+            "--grep",
+            "hello",
+            "--scope",
+            "src",
+            "--rank",
+            "hybrid",
+            "--root",
+            dir.path().to_str().unwrap(),
+            "--stdout",
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains(
+            "warn: collect currently ignores --scope, --rank",
+        ));
+}
+
+#[test]
+fn collect_quiet_suppresses_ignored_flag_warning() {
+    let dir = setup_git_repo();
+    cmd()
+        .args([
+            "collect",
+            "--grep",
+            "hello",
+            "--scope",
+            "src",
+            "--root",
+            dir.path().to_str().unwrap(),
+            "--stdout",
+            "--quiet",
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
 }
 
 // -----------------------------------------------------------------------

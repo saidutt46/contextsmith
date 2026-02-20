@@ -158,6 +158,76 @@ contextsmith explain context.manifest.json --detailed --top 5
 contextsmith explain ./output-dir/
 ```
 
+## `contextsmith collect`
+
+Collects context from explicit files, content patterns, or symbol definitions.
+
+```
+contextsmith collect [QUERY] [OPTIONS]
+```
+
+| Flag                | Description                                     |
+|---------------------|-------------------------------------------------|
+| `--files <path>`    | Include explicit file(s) (repeatable)           |
+| `--grep <pattern>`  | Search file content by pattern                  |
+| `--symbol <name>`   | Search for symbol definitions                   |
+| `--exclude <path>`  | Exclude matching paths (repeatable)             |
+| `--lang <name>`     | Filter by language                              |
+| `--path <pattern>`  | Filter by file path pattern                     |
+| `--max-files <N>`   | Cap number of files considered                  |
+| `--budget <N>`      | Token budget                                    |
+| `--format <fmt>`    | `markdown` / `json` / `plain` / `xml`           |
+| `--out <path>`      | Write output to file (also creates manifest.json) |
+| `--stdout`          | Write to stdout                                 |
+
+Accepted by CLI but currently not wired in command execution:
+
+| Flag                | Current status                                  |
+|---------------------|-------------------------------------------------|
+| `--scope`           | Accepted; currently ignored                     |
+| `--diff`            | Accepted; currently ignored                     |
+| `--span`            | Accepted; currently ignored (`context_lines` fixed at 3) |
+| `--max-snippets`    | Accepted; currently ignored                     |
+| `--include-defs`    | Accepted; currently ignored                     |
+| `--include-refs`    | Accepted; currently ignored                     |
+| `--include-imports` | Accepted; currently ignored                     |
+| `--tests`           | Accepted; currently ignored                     |
+| `--rank`            | Accepted; currently ignored                     |
+
+```bash
+# Positional query (same as --grep)
+contextsmith collect "Config" --stdout
+
+# Symbol search with budget
+contextsmith collect --symbol TokenEstimator --budget 500 --stdout
+
+# Explicit files to JSON
+contextsmith collect --files src/main.rs --files src/lib.rs --format json --stdout
+```
+
+## `contextsmith stats`
+
+Shows repository or bundle statistics for tuning context budgets.
+
+```
+contextsmith stats [BUNDLE] [OPTIONS]
+```
+
+| Flag                | Description                                     |
+|---------------------|-------------------------------------------------|
+| `--top-files <N>`   | Show top N files/snippets by token count        |
+| `--by-lang`         | Group stats by language                         |
+| `--by-type`         | Group stats by file type                        |
+| `--tokens`          | Estimate and display token counts               |
+
+```bash
+# Repository mode
+contextsmith stats --root . --tokens --by-lang
+
+# Bundle mode (manifest path)
+contextsmith stats ./context.manifest.json --top-files 5
+```
+
 ### Token Estimation
 
 ContextSmith estimates tokens using character-count heuristics (no external tokenizer dependency):
@@ -182,6 +252,30 @@ Accuracy is ±15-20% vs real BPE tokenizers — sufficient for budget planning. 
 | `--color <mode>`   | `auto` / `always` / `never`             |
 | `--json`           | Output as JSON                           |
 | `--time`           | Show timing information                  |
+
+### Output Contract
+
+For budgeted commands with `--out`, ContextSmith writes:
+
+- main bundle to the requested output path,
+- sibling manifest at `<stem>.manifest.json`,
+- non-essential status lines to stderr (for example `ok: manifest written ...` and command summaries like `diff:`, `collect:`, `pack:`).
+
+`--quiet` suppresses these non-essential stderr status lines.
+
+Quick acceptance checklist:
+
+```bash
+# Manifest + summary on stderr for --out
+contextsmith diff --root . --budget 500 --out /tmp/ctx.md
+contextsmith collect --files src/main.rs --root . --budget 500 --out /tmp/collect.md
+contextsmith pack /tmp/bundle.json --budget 500 --out /tmp/pack.md
+
+# Quiet suppresses non-essential stderr status lines
+contextsmith diff --root . --budget 500 --quiet --out /tmp/ctx-quiet.md
+contextsmith collect --files src/main.rs --root . --budget 500 --quiet --out /tmp/collect-quiet.md
+contextsmith pack /tmp/bundle.json --budget 500 --quiet --out /tmp/pack-quiet.md
+```
 
 ## Configuration
 
